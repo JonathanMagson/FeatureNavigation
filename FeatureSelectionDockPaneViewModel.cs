@@ -13,6 +13,8 @@ using ArcGIS.Desktop.Framework;
 using System.Collections.ObjectModel;
 using ArcGIS.Core.Geometry;
 using ArcGIS.Core.CIM;
+using System.IO;
+using System.Reflection;
 
 namespace FeatureSelection
 {
@@ -256,6 +258,7 @@ namespace FeatureSelection
                     ZoomToFeature(nextOid.Value);
                 });
                 CurrentObjectId = nextOid.Value.ToString(); // Update the CurrentObjectId property
+                LogCurrentObjectId(); // Log the current object ID
             }
         }
 
@@ -269,6 +272,7 @@ namespace FeatureSelection
                     ZoomToFeature(previousOid.Value);
                 });
                 CurrentObjectId = previousOid.Value.ToString(); // Update the CurrentObjectId property
+                LogCurrentObjectId(); // Log the current object ID
             }
         }
 
@@ -280,6 +284,7 @@ namespace FeatureSelection
                 {
                     ZoomToFeature(oid);
                 });
+                LogCurrentObjectId(); // Log the current object ID
             }
         }
 
@@ -301,6 +306,22 @@ namespace FeatureSelection
                         mapView.ZoomTo(buffer, new TimeSpan(0, 0, 0, 0, 100)); // Faster zoom
                     }
                 }
+            }
+        }
+
+        private void LogCurrentObjectId()
+        {
+            string logFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ArcGIS", "AddIns", "FeatureSelectionLog.txt");
+            string logEntry = $"{DateTime.Now}: OID {CurrentObjectId} in {SelectedLayer.Name}";
+
+            try
+            {
+                File.AppendAllText(logFilePath, logEntry + Environment.NewLine);
+            }
+            catch (Exception ex)
+            {
+                // Handle any exceptions here (e.g., log to a different location, show a message to the user, etc.)
+                System.Diagnostics.Debug.WriteLine($"Failed to write to log file: {ex.Message}");
             }
         }
 
