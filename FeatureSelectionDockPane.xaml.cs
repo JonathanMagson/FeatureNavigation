@@ -30,27 +30,23 @@ using System.Windows.Shapes;
 
 namespace FeatureSelection
 {
-  /// <summary>
-  /// Interaction logic for FeatureSelectionDockPaneView.xaml
-  /// </summary>
-  public partial class FeatureSelectionDockPaneView : UserControl
-  {
-    public FeatureSelectionDockPaneView()
+    public partial class FeatureSelectionDockPaneView : UserControl
     {
-      InitializeComponent();
+        public FeatureSelectionDockPaneView()
+        {
+            InitializeComponent();
+        }
 
+        private void TextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                var viewModel = DataContext as FeatureSelectionDockPaneViewModel;
+                if (viewModel != null && viewModel.ZoomToFeatureCommand.CanExecute(null))
+                {
+                    viewModel.ZoomToFeatureCommand.Execute(null);
+                }
+            }
+        }
     }
-
-    private void GridSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
-    {
-      var gridSplitter = sender as GridSplitter;
-
-      if (gridSplitter != null)
-      {
-        ((DataGridCell)gridSplitter.Tag).Column.Width
-            = ((DataGridCell)gridSplitter.Tag).Column.ActualWidth +
-              e.HorizontalChange;
-      }
-    }
-  }
 }

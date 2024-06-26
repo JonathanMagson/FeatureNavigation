@@ -11,7 +11,6 @@ using ArcGIS.Desktop.Framework.Threading.Tasks;
 using ArcGIS.Desktop.Framework.Events;
 using ArcGIS.Desktop.Framework;
 using System.Collections.ObjectModel;
-using System.Reflection;
 
 namespace FeatureSelection
 {
@@ -25,6 +24,7 @@ namespace FeatureSelection
 
         private RelayCommand _nextFeatureCommand;
         private RelayCommand _previousFeatureCommand;
+        private RelayCommand _zoomToFeatureCommand;
 
         private bool _selectToolActive = false;
         public bool SelectToolActive
@@ -170,19 +170,19 @@ namespace FeatureSelection
             }
         }
 
-        private long? _currentObjectId;
-        public long? CurrentObjectId
+        public System.Windows.Controls.ContextMenu RowContextMenu
+        {
+            get { return FrameworkApplication.CreateContextMenu("FeatureSelection_RowContextMenu"); }
+        }
+
+        private long _currentObjectId;
+        public long CurrentObjectId
         {
             get { return _currentObjectId; }
             set
             {
                 SetProperty(ref _currentObjectId, value, () => CurrentObjectId);
             }
-        }
-
-        public System.Windows.Controls.ContextMenu RowContextMenu
-        {
-            get { return FrameworkApplication.CreateContextMenu("FeatureSelection_RowContextMenu"); }
         }
 
         #region Commands
@@ -215,6 +215,20 @@ namespace FeatureSelection
             }
         }
 
+        public ICommand ZoomToFeatureCommand
+        {
+            get
+            {
+                if (_zoomToFeatureCommand == null)
+                {
+                    _zoomToFeatureCommand = new RelayCommand(
+                        async () => await ExecuteZoomToFeature(),
+                        () => CanExecuteZoomToFeature());
+                }
+                return _zoomToFeatureCommand;
+            }
+        }
+
         private bool CanExecuteNextFeature()
         {
             return FeatureNavigationHelper.SelectedLayer != null && FeatureNavigationHelper.FeatureOids.Count > 0;
@@ -223,6 +237,11 @@ namespace FeatureSelection
         private bool CanExecutePreviousFeature()
         {
             return FeatureNavigationHelper.SelectedLayer != null && FeatureNavigationHelper.FeatureOids.Count > 0;
+        }
+
+        private bool CanExecuteZoomToFeature()
+        {
+            return FeatureNavigationHelper.SelectedLayer != null && FeatureNavigationHelper.FeatureOids.Contains(CurrentObjectId);
         }
 
         private async Task ExecuteNextFeature()
@@ -249,6 +268,14 @@ namespace FeatureSelection
                     CurrentObjectId = previousOid.Value;  // Update CurrentObjectId
                 });
             }
+        }
+
+        private async Task ExecuteZoomToFeature()
+        {
+            await QueuedTask.Run(() =>
+            {
+                ZoomToFeature(CurrentObjectId);
+            });
         }
 
         private void ZoomToFeature(long oid)
@@ -378,7 +405,7 @@ namespace FeatureSelection
 
         private void RefreshSelectionOIDs(IEnumerable<long> oids)
         {
-            FieldAttributes.Clear();
+            _fieldAttributes.Clear();
             SetProperty(ref _selectedOID, null, () => SelectedOID);
             LayerSelection.Clear();
             lock (_lock)

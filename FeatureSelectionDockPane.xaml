@@ -7,28 +7,10 @@
              mc:Ignorable="d"
              d:DataContext="{Binding Path=FeatureSelection.FeatureSelectionDockPaneViewModel}"
              d:DesignHeight="300" d:DesignWidth="300">
+
+    <!-- Other UI elements -->
+
     <DockPanel LastChildFill="True" Margin="4">
-        <!-- Layer Selection -->
-        <Grid DockPanel.Dock="Top">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="Layer: " VerticalAlignment="Center" Margin="2"/>
-            <ComboBox ItemsSource="{Binding Layers}" SelectedItem="{Binding SelectedLayer}" DisplayMemberPath="Name" Margin="2"/>
-        </Grid>
-
-        <!-- Current Object ID Display -->
-        <Grid DockPanel.Dock="Top" Margin="2,10,2,2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="Current Object ID: " VerticalAlignment="Center" Margin="2"/>
-            <TextBox Text="{Binding CurrentObjectId, Mode=OneWay}" IsReadOnly="True" Margin="2"/>
-        </Grid>
-
-        <!-- Navigation Buttons -->
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DockPanel.Dock="Bottom" Margin="10">
             <Button Command="{Binding PreviousFeatureCommand}" ToolTip="Go to Previous Feature" Width="100" Height="24" Margin="5,0">
                 <StackPanel Orientation="Horizontal">
@@ -43,5 +25,25 @@
                 </StackPanel>
             </Button>
         </StackPanel>
+
+        <!-- TextBox to display and input the current Object ID -->
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DockPanel.Dock="Top" Margin="10">
+            <TextBlock Text="Current Object ID: " VerticalAlignment="Center" Margin="0,0,10,0"/>
+            <TextBox Text="{Binding CurrentObjectId, UpdateSourceTrigger=PropertyChanged}" Width="100" Height="24" Margin="5,0"
+                     VerticalAlignment="Center" KeyDown="TextBox_KeyDown"/>
+        </StackPanel>
+
+        <!-- Other controls here -->
+
+        <Grid DockPanel.Dock="Top">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Layer: " VerticalAlignment="Center" />
+            <ComboBox ItemsSource="{Binding Layers}" SelectedItem="{Binding SelectedLayer}" DisplayMemberPath="Name" />
+        </Grid>
+
+        <!-- Other controls here -->
     </DockPanel>
 </UserControl>
