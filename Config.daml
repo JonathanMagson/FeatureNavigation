@@ -40,12 +40,6 @@
         <button id="FeatureSelection_AddToExpression" caption="Add To Expression" className="FeatureSelection_Module:AddToExpression" smallImage="Images\SQLQueryAdd16.png" loadOnClick="false" keytip="z4" />
         <button id="FeatureSelection_PreviousFeature" caption="Previous Feature" className="FeatureSelection.FeatureSelectionDockPaneViewModel:PreviousFeature" loadOnClick="true" smallImage="Images\GenericButtonPurple16.png" tooltip="Go to previous feature" />
         <button id="FeatureSelection_NextFeature" caption="Next Feature" className="FeatureSelection.FeatureSelectionDockPaneViewModel:NextFeature" loadOnClick="true" smallImage="Images\GenericButtonPurple16.png" tooltip="Go to next feature" />
-        <button id="FeatureSelection_Button1" caption="Button 1" className="Button1" loadOnClick="true" smallImage="pack://application:,,,/ArcGIS.Desktop.Resources;component/Images/GenericButtonBlue16.png" largeImage="pack://application:,,,/ArcGIS.Desktop.Resources;component/Images/GenericButtonBlue32.png">
-          <tooltip heading="Tooltip Heading">Tooltip text<disabledText /></tooltip>
-        </button>
-        <button id="FeatureSelection_Button2" caption="Button 2" className="Button2" loadOnClick="true" smallImage="pack://application:,,,/ArcGIS.Desktop.Resources;component/Images/GenericButtonBlue16.png" largeImage="pack://application:,,,/ArcGIS.Desktop.Resources;component/Images/GenericButtonBlue32.png">
-          <tooltip heading="Tooltip Heading">Tooltip text<disabledText /></tooltip>
-        </button>
       </controls>
       <dockPanes>
         <dockPane id="FeatureSelection_FeatureSelectionDockPane" caption="Feature Selection" className="FeatureSelectionDockPaneViewModel" dock="group" dockWith="esri_core_contentsDockPane">
