@@ -1,44 +1,39 @@
-//   Copyright 2019 Esri
-
-//   Licensed under the Apache License, Version 2.0 (the "License");
-//   you may not use this file except in compliance with the License.
-//   You may obtain a copy of the License at
-
-//       https://www.apache.org/licenses/LICENSE-2.0
-
-//   Unless required by applicable law or agreed to in writing, software
-//   distributed under the License is distributed on an "AS IS" BASIS,
-//   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//   See the License for the specific language governing permissions and
-//   limitations under the License.
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
-using ArcGIS.Desktop.Framework;
+using System.Windows.Input;
+using ArcGIS.Core.Data;
 using ArcGIS.Desktop.Framework.Contracts;
-using System.Collections.ObjectModel;
 using ArcGIS.Desktop.Mapping;
 using ArcGIS.Desktop.Mapping.Events;
 using ArcGIS.Desktop.Framework.Threading.Tasks;
-using System.Windows.Input;
 using ArcGIS.Desktop.Framework.Events;
-using ArcGIS.Core.Data;
+using ArcGIS.Desktop.Framework;
+using System.Collections.ObjectModel;
 
 namespace FeatureSelection
 {
-    /// <summary>
-    /// ViewModel for the Dock Pane
-    /// </summary>
     internal class FeatureSelectionDockPaneViewModel : DockPane
     {
         private const string _dockPaneID = "FeatureSelection_FeatureSelectionDockPane";
         private const string _selectToolID = "FeatureSelection_FeatureSelectionTool";
         private object _lock = new object();
-        Dictionary<Map, SelectedLayerInfo> _selectedLayerInfos = new Dictionary<Map, SelectedLayerInfo>();
-        Map _activeMap;
+        private Dictionary<Map, SelectedLayerInfo> _selectedLayerInfos = new Dictionary<Map, SelectedLayerInfo>();
+        private Map _activeMap;
+
+        private RelayCommand _nextFeatureCommand;
+        private RelayCommand _previousFeatureCommand;
+
+        private bool _selectToolActive = false;
+        public bool SelectToolActive
+        {
+            get { return _selectToolActive; }
+            set
+            {
+                SetProperty(ref _selectToolActive, value, () => SelectToolActive);
+            }
+        }
 
         protected FeatureSelectionDockPaneViewModel()
         {
@@ -62,9 +57,6 @@ namespace FeatureSelection
             ActiveMapViewChangedEvent.Unsubscribe(OnActiveMapViewChanged);
         }
 
-        /// <summary>
-        /// Called when the dock pane is first initialized.
-        /// </summary>
         protected override Task InitializeAsync()
         {
             if (MapView.Active == null)
@@ -74,9 +66,6 @@ namespace FeatureSelection
             return UpdateForActiveMap();
         }
 
-        /// <summary>
-        /// Show the DockPane.
-        /// </summary>
         internal static void Show()
         {
             DockPane pane = FrameworkApplication.DockPaneManager.Find(_dockPaneID);
@@ -106,6 +95,7 @@ namespace FeatureSelection
                     FrameworkApplication.SetCurrentToolAsync("esri_mapping_exploreTool");
                     return;
                 }
+                FeatureNavigationHelper.InitializeLayer(_selectedLayer);  // Initialize the FeatureNavigationHelper with the selected layer
                 _selectedLayerInfos[_activeMap].SelectedLayer = _selectedLayer;
                 SelectedLayerChanged();
             }
@@ -186,121 +176,88 @@ namespace FeatureSelection
 
         #region Commands
 
-        private RelayCommand _selectToolCmd;
-        public ICommand SelectToolCmd
+        public ICommand NextFeatureCommand
         {
             get
             {
-                if (_selectToolCmd == null)
+                if (_nextFeatureCommand == null)
                 {
-                    _selectToolCmd = new RelayCommand(() => FrameworkApplication.SetCurrentToolAsync(_selectToolID), () => { return MapView.Active != null && SelectedLayer != null; });
+                    _nextFeatureCommand = new RelayCommand(
+                        async () => await ExecuteNextFeature(),
+                        () => CanExecuteNextFeature());
                 }
-                return _selectToolCmd;
+                return _nextFeatureCommand;
             }
         }
 
-        private bool _selectToolActive = false;
-        public bool SelectToolActive
-        {
-            get { return _selectToolActive; }
-            set
-            {
-                SetProperty(ref _selectToolActive, true, () => SelectToolActive);
-            }
-        }
-
-        private RelayCommand _clearSelectionCmd;
-        public ICommand ClearSelectionCmd
+        public ICommand PreviousFeatureCommand
         {
             get
             {
-                if (_clearSelectionCmd == null)
+                if (_previousFeatureCommand == null)
                 {
-                    _clearSelectionCmd = new RelayCommand(() => QueuedTask.Run(() => SelectedLayer.Select(null, SelectionCombinationMethod.Subtract)), () => { return MapView.Active != null && SelectedLayer != null; });
+                    _previousFeatureCommand = new RelayCommand(
+                        async () => await ExecutePreviousFeature(),
+                        () => CanExecutePreviousFeature());
                 }
-                return _clearSelectionCmd;
+                return _previousFeatureCommand;
             }
         }
 
-        private RelayCommand _newSelectionCmd;
-        public ICommand NewSelectionCmd
+        private bool CanExecuteNextFeature()
         {
-            get
-            {
-                if (_newSelectionCmd == null)
-                {
-                    _newSelectionCmd = new RelayCommand(() => ModifyLayerSelection(SelectionCombinationMethod.New), () => { return MapView.Active != null && SelectedLayer != null && WhereClause != ""; });
-                }
-                return _newSelectionCmd;
-            }
+            return FeatureNavigationHelper.SelectedLayer != null && FeatureNavigationHelper.FeatureOids.Count > 0;
         }
 
-        private RelayCommand _addSelectionCmd;
-        public ICommand AddSelectionCmd
+        private bool CanExecutePreviousFeature()
         {
-            get
-            {
-                if (_addSelectionCmd == null)
-                {
-                    _addSelectionCmd = new RelayCommand(() => ModifyLayerSelection(SelectionCombinationMethod.Add), () => { return MapView.Active != null && SelectedLayer != null && WhereClause != ""; });
-                }
-                return _addSelectionCmd;
-            }
+            return FeatureNavigationHelper.SelectedLayer != null && FeatureNavigationHelper.FeatureOids.Count > 0;
         }
 
-        private RelayCommand _removeSelectionCmd;
-        public ICommand RemoveSelectionCmd
+        private async Task ExecuteNextFeature()
         {
-            get
+            var nextOid = FeatureNavigationHelper.GetNextOid();
+            if (nextOid.HasValue)
             {
-                if (_removeSelectionCmd == null)
+                await QueuedTask.Run(() =>
                 {
-                    _removeSelectionCmd = new RelayCommand(() => ModifyLayerSelection(SelectionCombinationMethod.Subtract), () => { return MapView.Active != null && SelectedLayer != null && WhereClause != ""; });
-                }
-                return _removeSelectionCmd;
+                    ZoomToFeature(nextOid.Value);
+                });
             }
         }
 
-        private RelayCommand _selectSelectionCmd;
-        public ICommand SelectSelectionCmd
+        private async Task ExecutePreviousFeature()
         {
-            get
+            var previousOid = FeatureNavigationHelper.GetPreviousOid();
+            if (previousOid.HasValue)
             {
-                if (_selectSelectionCmd == null)
+                await QueuedTask.Run(() =>
                 {
-                    _selectSelectionCmd = new RelayCommand(() => ModifyLayerSelection(SelectionCombinationMethod.And), () => { return MapView.Active != null && SelectedLayer != null && WhereClause != ""; });
-                }
-                return _selectSelectionCmd;
+                    ZoomToFeature(previousOid.Value);
+                });
             }
         }
 
-        private RelayCommand _verifyExpressionCmd;
-        public ICommand VerifyExpressionCmd
+        private void ZoomToFeature(long oid)
         {
-            get
+            var mapView = MapView.Active;
+            if (mapView == null || FeatureNavigationHelper.SelectedLayer == null)
+                return;
+
+            var queryFilter = new QueryFilter { ObjectIDs = new List<long> { oid } };
+            using (var rowCursor = FeatureNavigationHelper.SelectedLayer.Search(queryFilter))
             {
-                if (_verifyExpressionCmd == null)
+                if (rowCursor.MoveNext())
                 {
-                    _verifyExpressionCmd = new RelayCommand(() => QueuedTask.Run(() => ValidateExpresion(true)), () => { return MapView.Active != null && SelectedLayer != null && WhereClause != ""; });
+                    using (var feature = (Feature)rowCursor.Current)
+                    {
+                        mapView.ZoomTo(feature.GetShape(), new TimeSpan(0, 0, 0, 0, 100)); // Faster zoom
+                    }
                 }
-                return _verifyExpressionCmd;
             }
         }
 
-        private RelayCommand _clearExpressionCmd;
-        public ICommand ClearExpressionCmd
-        {
-            get
-            {
-                if (_clearExpressionCmd == null)
-                {
-                    _clearExpressionCmd = new RelayCommand(() => WhereClause = "", () => { return WhereClause != ""; });
-                }
-                return _clearExpressionCmd;
-            }
-        }
-
-        internal bool ValidateExpresion(bool showValidationSuccessMsg)
+        private bool ValidateExpression(bool showValidationSuccessMsg)
         {
             try
             {
@@ -431,7 +388,7 @@ namespace FeatureSelection
                         return;
 
                     var oidField = SelectedLayer.GetTable().GetDefinition().GetObjectIDField();
-                    var qf = new ArcGIS.Core.Data.QueryFilter() { WhereClause = string.Format("{0} = {1}", oidField, SelectedOID) };
+                    var qf = new QueryFilter() { WhereClause = string.Format("{0} = {1}", oidField, SelectedOID) };
                     var cursor = SelectedLayer.Search(qf);
                     Row row = null;
 
@@ -466,7 +423,7 @@ namespace FeatureSelection
                 if (MapView.Active == null || SelectedLayer == null || WhereClause == null)
                     return;
 
-                if (!ValidateExpresion(false))
+                if (!ValidateExpression(false))
                     return;
 
                 SelectedLayer.Select(new QueryFilter() { WhereClause = WhereClause }, method);
@@ -544,12 +501,14 @@ namespace FeatureSelection
             SetProperty(ref _selectToolActive, (args.CurrentID == _selectToolID), () => SelectToolActive);
         }
 
+        internal bool ValidateExpresion(bool v)
+        {
+            throw new NotImplementedException();
+        }
+
         #endregion
     }
 
-    /// <summary>
-    /// Represents a single row in the data grid storing the field name, alias, and attribute value for a given row.
-    /// </summary>
     internal class FieldAttributeInfo
     {
         private string _fieldName;
@@ -586,9 +545,6 @@ namespace FeatureSelection
         }
     }
 
-    /// <summary>
-    /// Used to persist the state of the selected layer and object ID for a given map.
-    /// </summary>
     internal class SelectedLayerInfo
     {
         public SelectedLayerInfo() { }
@@ -603,9 +559,6 @@ namespace FeatureSelection
         public long? SelectedOID { get; set; }
     }
 
-    /// <summary>
-    /// Button implementation to show the DockPane.
-    /// </summary>
     internal class FeatureSelectionDockPane_ShowButton : Button
     {
         protected override void OnClick()
