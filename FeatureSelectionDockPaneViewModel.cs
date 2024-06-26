@@ -294,17 +294,22 @@ namespace FeatureSelection
             if (mapView == null || FeatureNavigationHelper.SelectedLayer == null)
                 return;
 
+            // Ensure that the SelectedLayer is valid and the OID exists in the layer
             var queryFilter = new QueryFilter { ObjectIDs = new List<long> { oid } };
-            using (var rowCursor = FeatureNavigationHelper.SelectedLayer.Search(queryFilter))
+            using (var rowCursor = FeatureNavigationHelper.SelectedLayer?.Search(queryFilter))
             {
-                if (rowCursor.MoveNext())
+                if (rowCursor == null || !rowCursor.MoveNext())
                 {
-                    using (var feature = (Feature)rowCursor.Current)
-                    {
-                        var geometry = feature.GetShape();
-                        var buffer = GeometryEngine.Instance.Buffer(geometry, BufferSize);
-                        mapView.ZoomTo(buffer, new TimeSpan(0, 0, 0, 0, 100)); // Faster zoom
-                    }
+                    // Handle the case where the feature is not found
+                    System.Diagnostics.Debug.WriteLine($"Feature with OID {oid} not found.");
+                    return;
+                }
+
+                using (var feature = (Feature)rowCursor.Current)
+                {
+                    var geometry = feature.GetShape();
+                    var buffer = GeometryEngine.Instance.Buffer(geometry, BufferSize);
+                    mapView.ZoomTo(buffer, new TimeSpan(0, 0, 0, 0, 100)); // Faster zoom
                 }
             }
         }
