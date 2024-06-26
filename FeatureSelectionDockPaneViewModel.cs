@@ -11,6 +11,8 @@ using ArcGIS.Desktop.Framework.Threading.Tasks;
 using ArcGIS.Desktop.Framework.Events;
 using ArcGIS.Desktop.Framework;
 using System.Collections.ObjectModel;
+using ArcGIS.Core.Geometry;
+using ArcGIS.Core.CIM;
 
 namespace FeatureSelection
 {
@@ -170,19 +172,26 @@ namespace FeatureSelection
             }
         }
 
-        public System.Windows.Controls.ContextMenu RowContextMenu
-        {
-            get { return FrameworkApplication.CreateContextMenu("FeatureSelection_RowContextMenu"); }
-        }
-
-        private long _currentObjectId;
-        public long CurrentObjectId
+        private string _currentObjectId;
+        public string CurrentObjectId
         {
             get { return _currentObjectId; }
             set
             {
                 SetProperty(ref _currentObjectId, value, () => CurrentObjectId);
             }
+        }
+
+        private double _bufferSize = 100.0; // Default buffer size
+        public double BufferSize
+        {
+            get { return _bufferSize; }
+            set { SetProperty(ref _bufferSize, value, () => BufferSize); }
+        }
+
+        public System.Windows.Controls.ContextMenu RowContextMenu
+        {
+            get { return FrameworkApplication.CreateContextMenu("FeatureSelection_RowContextMenu"); }
         }
 
         #region Commands
@@ -221,9 +230,7 @@ namespace FeatureSelection
             {
                 if (_zoomToFeatureCommand == null)
                 {
-                    _zoomToFeatureCommand = new RelayCommand(
-                        async () => await ExecuteZoomToFeature(),
-                        () => CanExecuteZoomToFeature());
+                    _zoomToFeatureCommand = new RelayCommand(() => ZoomToFeature(), () => true);
                 }
                 return _zoomToFeatureCommand;
             }
@@ -239,11 +246,6 @@ namespace FeatureSelection
             return FeatureNavigationHelper.SelectedLayer != null && FeatureNavigationHelper.FeatureOids.Count > 0;
         }
 
-        private bool CanExecuteZoomToFeature()
-        {
-            return FeatureNavigationHelper.SelectedLayer != null && FeatureNavigationHelper.FeatureOids.Contains(CurrentObjectId);
-        }
-
         private async Task ExecuteNextFeature()
         {
             var nextOid = FeatureNavigationHelper.GetNextOid();
@@ -252,8 +254,8 @@ namespace FeatureSelection
                 await QueuedTask.Run(() =>
                 {
                     ZoomToFeature(nextOid.Value);
-                    CurrentObjectId = nextOid.Value;  // Update CurrentObjectId
                 });
+                CurrentObjectId = nextOid.Value.ToString(); // Update the CurrentObjectId property
             }
         }
 
@@ -265,17 +267,20 @@ namespace FeatureSelection
                 await QueuedTask.Run(() =>
                 {
                     ZoomToFeature(previousOid.Value);
-                    CurrentObjectId = previousOid.Value;  // Update CurrentObjectId
                 });
+                CurrentObjectId = previousOid.Value.ToString(); // Update the CurrentObjectId property
             }
         }
 
-        private async Task ExecuteZoomToFeature()
+        private void ZoomToFeature()
         {
-            await QueuedTask.Run(() =>
+            if (long.TryParse(CurrentObjectId, out long oid))
             {
-                ZoomToFeature(CurrentObjectId);
-            });
+                QueuedTask.Run(() =>
+                {
+                    ZoomToFeature(oid);
+                });
+            }
         }
 
         private void ZoomToFeature(long oid)
@@ -291,7 +296,9 @@ namespace FeatureSelection
                 {
                     using (var feature = (Feature)rowCursor.Current)
                     {
-                        mapView.ZoomTo(feature.GetShape(), new TimeSpan(0, 0, 0, 0, 100)); // Faster zoom
+                        var geometry = feature.GetShape();
+                        var buffer = GeometryEngine.Instance.Buffer(geometry, BufferSize);
+                        mapView.ZoomTo(buffer, new TimeSpan(0, 0, 0, 0, 100)); // Faster zoom
                     }
                 }
             }
@@ -405,7 +412,7 @@ namespace FeatureSelection
 
         private void RefreshSelectionOIDs(IEnumerable<long> oids)
         {
-            _fieldAttributes.Clear();
+            FieldAttributes.Clear();
             SetProperty(ref _selectedOID, null, () => SelectedOID);
             LayerSelection.Clear();
             lock (_lock)

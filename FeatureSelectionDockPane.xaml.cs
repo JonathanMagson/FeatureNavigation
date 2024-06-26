@@ -42,10 +42,7 @@ namespace FeatureSelection
             if (e.Key == Key.Enter)
             {
                 var viewModel = DataContext as FeatureSelectionDockPaneViewModel;
-                if (viewModel != null && viewModel.ZoomToFeatureCommand.CanExecute(null))
-                {
-                    viewModel.ZoomToFeatureCommand.Execute(null);
-                }
+                viewModel?.ZoomToFeatureCommand.Execute(null);
             }
         }
     }
