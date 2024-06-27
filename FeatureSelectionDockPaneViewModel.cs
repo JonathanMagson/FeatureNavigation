@@ -184,8 +184,8 @@ namespace FeatureSelection
             }
         }
 
-        private double _bufferSize = 100.0; // Default buffer size
-        public double BufferSize
+        private float _bufferSize = 1.0f; // Default buffer size
+        public float BufferSize
         {
             get { return _bufferSize; }
             set { SetProperty(ref _bufferSize, value, () => BufferSize); }
@@ -294,7 +294,6 @@ namespace FeatureSelection
             if (mapView == null || FeatureNavigationHelper.SelectedLayer == null)
                 return;
 
-            // Ensure that the SelectedLayer is valid and the OID exists in the layer
             var queryFilter = new QueryFilter { ObjectIDs = new List<long> { oid } };
             using (var rowCursor = FeatureNavigationHelper.SelectedLayer?.Search(queryFilter))
             {
@@ -308,7 +307,7 @@ namespace FeatureSelection
                 using (var feature = (Feature)rowCursor.Current)
                 {
                     var geometry = feature.GetShape();
-                    var buffer = GeometryEngine.Instance.Buffer(geometry, BufferSize);
+                    var buffer = GeometryEngine.Instance.Buffer(geometry, (double)BufferSize);
                     mapView.ZoomTo(buffer, new TimeSpan(0, 0, 0, 0, 100)); // Faster zoom
                 }
             }

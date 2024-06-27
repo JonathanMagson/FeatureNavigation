@@ -28,7 +28,8 @@
 
             <!-- Buffer Size -->
             <TextBlock Text="Buffer Size: " VerticalAlignment="Center" Grid.Row="1" Grid.Column="0" Margin="0,10,10,0"/>
-            <TextBox Text="{Binding BufferSize, UpdateSourceTrigger=PropertyChanged}" Grid.Row="1" Grid.Column="1" Width="100" Height="24" Margin="0,10,10,0" VerticalAlignment="Center"/>
+            <TextBox Text="{Binding BufferSize, UpdateSourceTrigger=PropertyChanged, StringFormat=F10}" Grid.Row="1" Grid.Column="1" Width="100" Height="24" Margin="0,10,10,0" VerticalAlignment="Center"/>
+
 
             <!-- Current Object ID -->
             <TextBlock Text="Current Object ID: " VerticalAlignment="Center" Grid.Row="2" Grid.Column="0" Margin="0,10,10,0"/>
