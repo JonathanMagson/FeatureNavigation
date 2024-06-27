@@ -16,6 +16,13 @@ public static class FeatureNavigationHelper
         await LoadFeatureOids();
     }
 
+    public static void ClearLayer()
+    {
+        SelectedLayer = null;
+        FeatureOids.Clear();
+        CurrentIndex = -1;
+    }
+
     public static long? GetNextOid()
     {
         if (FeatureOids.Count == 0)

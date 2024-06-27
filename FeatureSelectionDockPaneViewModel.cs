@@ -68,6 +68,7 @@ namespace FeatureSelection
                 return Task.FromResult(0);
 
             _activeMap = MapView.Active.Map;
+            SelectedLayer = null; // Set to null initially
             return UpdateForActiveMap();
         }
 
@@ -97,6 +98,7 @@ namespace FeatureSelection
                 SetProperty(ref _selectedLayer, value, () => SelectedLayer);
                 if (_selectedLayer == null)
                 {
+                    FeatureNavigationHelper.ClearLayer();
                     FrameworkApplication.SetCurrentToolAsync("esri_mapping_exploreTool");
                     return;
                 }
@@ -184,7 +186,7 @@ namespace FeatureSelection
             }
         }
 
-        private float _bufferSize = 1.0f; // Default buffer size
+        private float _bufferSize = 0.0f; // Default buffer size
         public float BufferSize
         {
             get { return _bufferSize; }
@@ -316,7 +318,7 @@ namespace FeatureSelection
         private void LogCurrentObjectId()
         {
             string logFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ArcGIS", "AddIns", "FeatureSelectionLog.txt");
-            string logEntry = $"{DateTime.Now}: OID {CurrentObjectId} in {SelectedLayer.Name}";
+            string logEntry = $"{DateTime.Now}: OID {CurrentObjectId} in {SelectedLayer?.Name ?? "No Layer Selected"}";
 
             try
             {
@@ -334,7 +336,7 @@ namespace FeatureSelection
             try
             {
                 var qf = new QueryFilter() { WhereClause = WhereClause };
-                SelectedLayer.Search(qf);
+                SelectedLayer?.Search(qf);
             }
             catch (Exception)
             {
@@ -372,7 +374,7 @@ namespace FeatureSelection
                 {
                     RefreshLayerCollection();
 
-                    SetProperty(ref _selectedLayer, (selectedLayerInfo.SelectedLayer != null) ? selectedLayerInfo.SelectedLayer : Layers.FirstOrDefault(), () => SelectedLayer);
+                    SetProperty(ref _selectedLayer, selectedLayerInfo.SelectedLayer, () => SelectedLayer);
                     if (_selectedLayer == null)
                     {
                         FrameworkApplication.SetCurrentToolAsync("esri_mapping_exploreTool");
@@ -639,3 +641,4 @@ namespace FeatureSelection
         }
     }
 }
+
