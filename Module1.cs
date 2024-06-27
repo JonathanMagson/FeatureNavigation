@@ -22,7 +22,7 @@ using ArcGIS.Desktop.Framework.Contracts;
 using System.Threading.Tasks;
 using ArcGIS.Core.Data;
 
-namespace FeatureSelection
+namespace FeatureNavigation
 {
   /// <summary>
   /// This sample provides a map tool and a dock pane that allow you to create new selections and manipulate existing selections within the map.
@@ -30,8 +30,8 @@ namespace FeatureSelection
   /// <remarks>
   /// 1. In Visual Studio click the Build menu. Then select Build Solution.
   /// 2. Launch the debugger to open ArcGIS Pro.
-  /// 4. With a map view active go to the Add-In tab and click the Feature Selection button.
-  /// 5. This will open the Feature Selection dock pane.
+  /// 4. With a map view active go to the Add-In tab and click the Feature Navigation button.
+  /// 5. This will open the Feature Navigation dock pane.
   /// 6. Select the layer of interest in the Combo box and in the list below it will show the object ids of the selected features.
   /// ![UI](Screenshots/screenshot1.png)
   /// 7. Select any of the object ids to see the attributes for that feature.
@@ -43,7 +43,7 @@ namespace FeatureSelection
   internal class Module1 : Module
   {
     private static Module1 _this = null;
-    private const string _dockPaneID = "FeatureSelection_FeatureSelectionDockPane";
+    private const string _dockPaneID = "FeatureNavigation_FeatureNavigationDockPane";
 
     /// <summary>
     /// Retrieve the singleton instance to this module here
@@ -52,7 +52,7 @@ namespace FeatureSelection
     {
       get
       {
-        return _this ?? (_this = (Module1)FrameworkApplication.FindModule("FeatureSelection_Module"));
+        return _this ?? (_this = (Module1)FrameworkApplication.FindModule("FeatureNavigation_Module"));
       }
     }
 
@@ -65,7 +65,7 @@ namespace FeatureSelection
     {
       get
       {
-        var vm = FeatureSelectionVM;
+        var vm = FeatureNavigationVM;
         if (vm == null || vm.SelectedRow == null)
           return false;
 
@@ -78,7 +78,7 @@ namespace FeatureSelection
     /// </summary>
     internal void SetAsExpression()
     {
-      var vm = FeatureSelectionVM;
+      var vm = FeatureNavigationVM;
       vm.WhereClause = GetFormattedExpression(vm.SelectedRow);
     }
 
@@ -93,7 +93,7 @@ namespace FeatureSelection
     {
       get
       {
-        var vm = FeatureSelectionVM;
+        var vm = FeatureNavigationVM;
         if (vm == null || vm.SelectedRow == null)
           return false;
 
@@ -106,7 +106,7 @@ namespace FeatureSelection
     /// </summary>
     internal void AddToExpression()
     {
-      var vm = FeatureSelectionVM;
+      var vm = FeatureNavigationVM;
       if (vm.WhereClause == "")
         vm.WhereClause = GetFormattedExpression(vm.SelectedRow);
       else
@@ -143,16 +143,16 @@ namespace FeatureSelection
     }
 
     /// <summary>
-    /// Stores the instance of the Feature Selection dock pane viewmodel
+    /// Stores the instance of the Feature Navigation dock pane viewmodel
     /// </summary>
-    private static FeatureSelectionDockPaneViewModel _dockPane;
-    internal static FeatureSelectionDockPaneViewModel FeatureSelectionVM
+    private static FeatureNavigationDockPaneViewModel _dockPane;
+    internal static FeatureNavigationDockPaneViewModel FeatureNavigationVM
     {
       get
       {
         if (_dockPane == null)
         {
-          _dockPane = FrameworkApplication.DockPaneManager.Find(_dockPaneID) as FeatureSelectionDockPaneViewModel;
+          _dockPane = FrameworkApplication.DockPaneManager.Find(_dockPaneID) as FeatureNavigationDockPaneViewModel;
         }
         return _dockPane;
       }

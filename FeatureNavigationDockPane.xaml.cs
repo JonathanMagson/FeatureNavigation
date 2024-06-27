@@ -28,11 +28,11 @@ using System.Windows.Navigation;
 using System.Windows.Shapes;
 
 
-namespace FeatureSelection
+namespace FeatureNavigation
 {
-    public partial class FeatureSelectionDockPaneView : UserControl
+    public partial class FeatureNavigationDockPaneView : UserControl
     {
-        public FeatureSelectionDockPaneView()
+        public FeatureNavigationDockPaneView()
         {
             InitializeComponent();
         }
@@ -41,7 +41,7 @@ namespace FeatureSelection
         {
             if (e.Key == Key.Enter)
             {
-                var viewModel = DataContext as FeatureSelectionDockPaneViewModel;
+                var viewModel = DataContext as FeatureNavigationDockPaneViewModel;
                 viewModel?.ZoomToFeatureCommand.Execute(null);
             }
         }

@@ -16,12 +16,12 @@ using ArcGIS.Core.CIM;
 using System.IO;
 using System.Reflection;
 
-namespace FeatureSelection
+namespace FeatureNavigation
 {
-    internal class FeatureSelectionDockPaneViewModel : DockPane
+    internal class FeatureNavigationDockPaneViewModel : DockPane
     {
-        private const string _dockPaneID = "FeatureSelection_FeatureSelectionDockPane";
-        private const string _selectToolID = "FeatureSelection_FeatureSelectionTool";
+        private const string _dockPaneID = "FeatureNavigation_FeatureNavigationDockPane";
+        private const string _selectToolID = "FeatureNavigation_FeatureNavigationTool";
         private object _lock = new object();
         private Dictionary<Map, SelectedLayerInfo> _selectedLayerInfos = new Dictionary<Map, SelectedLayerInfo>();
         private Map _activeMap;
@@ -40,7 +40,7 @@ namespace FeatureSelection
             }
         }
 
-        protected FeatureSelectionDockPaneViewModel()
+        protected FeatureNavigationDockPaneViewModel()
         {
             System.Windows.Data.BindingOperations.EnableCollectionSynchronization(_layers, _lock);
             System.Windows.Data.BindingOperations.EnableCollectionSynchronization(_layerSelection, _lock);
@@ -53,7 +53,7 @@ namespace FeatureSelection
             MapRemovedEvent.Subscribe(OnMapRemoved);
         }
 
-        ~FeatureSelectionDockPaneViewModel()
+        ~FeatureNavigationDockPaneViewModel()
         {
             LayersAddedEvent.Unsubscribe(OnLayersAdded);
             LayersRemovedEvent.Unsubscribe(OnLayersRemoved);
@@ -195,7 +195,7 @@ namespace FeatureSelection
 
         public System.Windows.Controls.ContextMenu RowContextMenu
         {
-            get { return FrameworkApplication.CreateContextMenu("FeatureSelection_RowContextMenu"); }
+            get { return FrameworkApplication.CreateContextMenu("FeatureNavigation_RowContextMenu"); }
         }
 
         #region Commands
@@ -317,7 +317,7 @@ namespace FeatureSelection
 
         private void LogCurrentObjectId()
         {
-            string logFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ArcGIS", "AddIns", "FeatureSelectionLog.txt");
+            string logFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ArcGIS", "AddIns", "FeatureNavigationLog.txt");
             string logEntry = $"{DateTime.Now}: OID {CurrentObjectId} in {SelectedLayer?.Name ?? "No Layer Selected"}";
 
             try
@@ -633,11 +633,11 @@ namespace FeatureSelection
         public long? SelectedOID { get; set; }
     }
 
-    internal class FeatureSelectionDockPane_ShowButton : Button
+    internal class FeatureNavigationDockPane_ShowButton : Button
     {
         protected override void OnClick()
         {
-            FeatureSelectionDockPaneViewModel.Show();
+            FeatureNavigationDockPaneViewModel.Show();
         }
     }
 }

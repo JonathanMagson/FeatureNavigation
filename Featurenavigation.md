@@ -23,7 +23,7 @@ The FeatureNavigation Add-in for ArcGIS Pro provides a custom tool and dock pane
 ## Usage
 
 1. **Select a Layer**:
-   - Open the FeatureSelection dock pane.
+   - Open the FeatureNavigation dock pane.
    - Select a layer from the "Layer" combo box.
 
 2. **Set Buffer Size**:
@@ -37,11 +37,11 @@ The FeatureNavigation Add-in for ArcGIS Pro provides a custom tool and dock pane
    - Manually enter an Object ID in the "Current Object ID" text box and press Enter to zoom to that feature.
 
 ## Logging
-- The Add-in logs the timestamp and Object ID of the feature being navigated to in a log file located at `C:\Users\<user_name>\Documents\ArcGIS\AddIns\FeatureSelectionLog.txt`.
+- The Add-in logs the timestamp and Object ID of the feature being navigated to in a log file located at `C:\Users\<user_name>\Documents\ArcGIS\AddIns\FeatureNavigationLog.txt`.
 
 ## Installation
 1. Download the Add-in package.
 2. Double-click the Add-in file to install it in ArcGIS Pro.
 
 ## Support
-For any issues or questions, please contact [Your Support Contact Information].
+For any issues or questions, please contact jonathan.magson@environment.nsw.gov.au
