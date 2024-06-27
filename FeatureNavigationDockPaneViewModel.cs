@@ -310,7 +310,7 @@ namespace FeatureNavigation
                 {
                     var geometry = feature.GetShape();
                     var buffer = GeometryEngine.Instance.Buffer(geometry, (double)BufferSize);
-                    mapView.ZoomTo(buffer, new TimeSpan(0, 0, 0, 0, 100)); // Faster zoom
+                    mapView.ZoomTo(buffer, new TimeSpan(0, 0, 0, 0, 100)); // zoom speed at 100 milliseconds
                 }
             }
         }
@@ -641,4 +641,3 @@ namespace FeatureNavigation
         }
     }
 }
-
