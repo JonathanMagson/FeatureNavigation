@@ -15,10 +15,11 @@ using ArcGIS.Core.Geometry;
 using ArcGIS.Core.CIM;
 using System.IO;
 using System.Reflection;
+using System.ComponentModel;
 
 namespace FeatureNavigation
 {
-    internal class FeatureNavigationDockPaneViewModel : DockPane
+    internal class FeatureNavigationDockPaneViewModel : DockPane, INotifyPropertyChanged
     {
         private const string _dockPaneID = "FeatureNavigation_FeatureNavigationDockPane";
         private const string _selectToolID = "FeatureNavigation_FeatureNavigationTool";
@@ -98,7 +99,7 @@ namespace FeatureNavigation
                 SetProperty(ref _selectedLayer, value, () => SelectedLayer);
                 if (_selectedLayer == null)
                 {
-                    FeatureNavigationHelper.ClearLayer();
+                    ClearLayerSelection();
                     FrameworkApplication.SetCurrentToolAsync("esri_mapping_exploreTool");
                     return;
                 }
@@ -193,6 +194,13 @@ namespace FeatureNavigation
             set { SetProperty(ref _bufferPercentage, value, () => BufferPercentage); }
         }
 
+        private bool _isSelectFeatureChecked;
+        public bool IsSelectFeatureChecked
+        {
+            get { return _isSelectFeatureChecked; }
+            set { SetProperty(ref _isSelectFeatureChecked, value, () => IsSelectFeatureChecked); }
+        }
+
         public System.Windows.Controls.ContextMenu RowContextMenu
         {
             get { return FrameworkApplication.CreateContextMenu("FeatureNavigation_RowContextMenu"); }
@@ -261,6 +269,10 @@ namespace FeatureNavigation
                 });
                 CurrentObjectId = nextOid.Value.ToString(); // Update the CurrentObjectId property
                 LogCurrentObjectId(); // Log the current object ID
+                if (IsSelectFeatureChecked)
+                {
+                    SelectCurrentFeature(); // Select the feature if the checkbox is checked
+                }
             }
         }
 
@@ -275,6 +287,10 @@ namespace FeatureNavigation
                 });
                 CurrentObjectId = previousOid.Value.ToString(); // Update the CurrentObjectId property
                 LogCurrentObjectId(); // Log the current object ID
+                if (IsSelectFeatureChecked)
+                {
+                    SelectCurrentFeature(); // Select the feature if the checkbox is checked
+                }
             }
         }
 
@@ -514,6 +530,38 @@ namespace FeatureNavigation
             });
         }
 
+        private void SelectCurrentFeature()
+        {
+            if (long.TryParse(CurrentObjectId, out long oid))
+            {
+                QueuedTask.Run(() =>
+                {
+                    // Clear the previous selection
+                    SelectedLayer.ClearSelection();
+
+                    // Create a query filter to select the current feature
+                    var queryFilter = new QueryFilter
+                    {
+                        ObjectIDs = new List<long> { oid }
+                    };
+
+                    // Select the current feature
+                    SelectedLayer.Select(queryFilter, SelectionCombinationMethod.New);
+                });
+            }
+        }
+
+        private void ClearLayerSelection()
+        {
+            if (SelectedLayer != null)
+            {
+                QueuedTask.Run(() =>
+                {
+                    SelectedLayer.ClearSelection();
+                });
+            }
+        }
+
         #endregion
 
         #region Event Handlers
@@ -591,6 +639,24 @@ namespace FeatureNavigation
         }
 
         #endregion
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected void OnPropertyChanged(string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        protected bool SetProperty<T>(ref T storage, T value, System.Linq.Expressions.Expression<Func<T>> propertyExpression)
+        {
+            if (EqualityComparer<T>.Default.Equals(storage, value))
+                return false;
+
+            storage = value;
+            var memberExpression = (System.Linq.Expressions.MemberExpression)propertyExpression.Body;
+            OnPropertyChanged(memberExpression.Member.Name);
+            return true;
+        }
     }
 
     internal class FieldAttributeInfo
