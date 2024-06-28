@@ -1,12 +1,11 @@
 ## FeatureNavigation
-
 Download the add-in installer here: https://github.com/JonathanMagson/FeatureNavigation/blob/master/FeatureSelection.esriAddinX
-
-![image](https://github.com/JonathanMagson/FeatureNavigation/assets/162064664/36b30d45-b882-4d9a-9da2-03c1d05ced3c)
 
 
 ## Overview
 The FeatureNavigation Add-in for ArcGIS Pro provides a custom tool and dock pane to manage feature navigation within a map. It enhances navigation through selected features and provides functionalities for zooming into features with a specified buffer size.
+
+![image](https://github.com/JonathanMagson/FeatureNavigation/assets/162064664/36b30d45-b882-4d9a-9da2-03c1d05ced3c)
 
 ## Features
 
@@ -31,7 +30,7 @@ The FeatureNavigation Add-in for ArcGIS Pro provides a custom tool and dock pane
    - Select a layer from the "Layer" combo box.
 
 2. **Set Buffer Size**:
-   - Enter a buffer size in the "Buffer Size" text box. The value can be a decimal.
+   - Enter a buffer size percentage in the "Buffer Size" text box. T
 
 3. **Navigate Features**:
    - Use the "Previous" and "Next" buttons to navigate through the selected features.
