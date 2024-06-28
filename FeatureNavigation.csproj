@@ -11,6 +11,9 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
+    <None Remove="Images\nextfeature.png" />
+  </ItemGroup>
+  <ItemGroup>
     <Reference Include="ArcGIS.Desktop.Framework">
       <HintPath>C:\Program Files\ArcGIS\Pro\bin\ArcGIS.Desktop.Framework.dll</HintPath>
       <Private>False</Private>
@@ -81,6 +84,9 @@
     <Content Include="Screenshots\screenshot2.png" />
   </ItemGroup>
   <ItemGroup>
+    <Resource Include="Images\nextfeature.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Resource>
     <Resource Include="Images\SelectionSelectTool16.png" />
     <Resource Include="Images\SelectionClearSelected16.png" />
     <Resource Include="Images\SelectionMethodAdd16.png" />

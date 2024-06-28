@@ -186,11 +186,11 @@ namespace FeatureNavigation
             }
         }
 
-        private float _bufferSize = 0.0f; // Default buffer size
-        public float BufferSize
+        private float _bufferPercentage = 0.0f; // Default buffer percentage
+        public float BufferPercentage
         {
-            get { return _bufferSize; }
-            set { SetProperty(ref _bufferSize, value, () => BufferSize); }
+            get { return _bufferPercentage; }
+            set { SetProperty(ref _bufferPercentage, value, () => BufferPercentage); }
         }
 
         public System.Windows.Controls.ContextMenu RowContextMenu
@@ -309,10 +309,20 @@ namespace FeatureNavigation
                 using (var feature = (Feature)rowCursor.Current)
                 {
                     var geometry = feature.GetShape();
-                    var buffer = GeometryEngine.Instance.Buffer(geometry, (double)BufferSize);
-                    mapView.ZoomTo(buffer, new TimeSpan(0, 0, 0, 0, 100)); // zoom speed at 100 milliseconds
+                    var extent = geometry.Extent;
+                    var bufferDistance = CalculateBufferDistance(extent, BufferPercentage);
+                    var buffer = GeometryEngine.Instance.Buffer(geometry, bufferDistance);
+                    mapView.ZoomTo(buffer, new TimeSpan(0, 0, 0, 0, 100)); // Faster zoom
                 }
             }
+        }
+
+        private double CalculateBufferDistance(Envelope extent, float bufferPercentage)
+        {
+            var width = extent.Width;
+            var height = extent.Height;
+            var maxDimension = Math.Max(width, height);
+            return maxDimension * (bufferPercentage / 100.0);
         }
 
         private void LogCurrentObjectId()
