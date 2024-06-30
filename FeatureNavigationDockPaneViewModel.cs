@@ -16,6 +16,7 @@ using ArcGIS.Core.CIM;
 using System.IO;
 using System.Reflection;
 using System.ComponentModel;
+using ArcGIS.Core.Internal.Geometry;
 
 namespace FeatureNavigation
 {
@@ -325,13 +326,35 @@ namespace FeatureNavigation
                 using (var feature = (Feature)rowCursor.Current)
                 {
                     var geometry = feature.GetShape();
-                    var extent = geometry.Extent;
-                    var bufferDistance = CalculateBufferDistance(extent, BufferPercentage);
-                    var buffer = GeometryEngine.Instance.Buffer(geometry, bufferDistance);
-                    mapView.ZoomTo(buffer, new TimeSpan(0, 0, 0, 0, 100)); // Faster zoom
+                    if (geometry.GeometryType == GeometryType.Point)
+                    {
+                        // Create an envelope around the point to achieve the desired scale
+                        const double scaleFactor = 1000; // Desired scale 1:1000
+                        var center = geometry as MapPoint;
+                        var halfWidth = scaleFactor / 2.0;
+                        var halfHeight = scaleFactor / 2.0;
+
+                        var envelope = new EnvelopeBuilder(center.SpatialReference)
+                        {
+                            XMin = center.X - halfWidth,
+                            XMax = center.X + halfWidth,
+                            YMin = center.Y - halfHeight,
+                            YMax = center.Y + halfHeight
+                        }.ToGeometry();
+
+                        mapView.ZoomTo(envelope, new TimeSpan(0, 0, 0, 0, 100)); // Faster zoom
+                    }
+                    else
+                    {
+                        var extent = geometry.Extent;
+                        var bufferDistance = CalculateBufferDistance(extent, BufferPercentage);
+                        var buffer = GeometryEngine.Instance.Buffer(geometry, bufferDistance);
+                        mapView.ZoomTo(buffer, new TimeSpan(0, 0, 0, 0, 100)); // Faster zoom
+                    }
                 }
             }
         }
+
 
         private double CalculateBufferDistance(Envelope extent, float bufferPercentage)
         {
