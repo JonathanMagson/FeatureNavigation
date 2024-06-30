@@ -1,5 +1,5 @@
 ## FeatureNavigation
-Download the add-in installer here: https://github.com/JonathanMagson/FeatureNavigation/blob/master/FeatureSelection.esriAddinX
+Download the add-in installer here: https://github.com/JonathanMagson/FeatureNavigation/blob/master/FeatureNavigation.esriAddinX
 
 
 ## Overview
@@ -20,8 +20,8 @@ The FeatureNavigation Add-in for ArcGIS Pro provides a custom tool and dock pane
 - **Manual Input**: Users can manually input an Object ID and press Enter to zoom to that feature.
 
 ### Navigation Buttons
-- **Previous Feature Button**: Navigates to the previous feature in the selection set.
-- **Next Feature Button**: Navigates to the next feature in the selection set.
+- **Previous Feature Button**: Navigate to the previous feature in the selection set.
+- **Next Feature Button**: Navigate to the next feature in the selection set.
 
 ## Usage
 
