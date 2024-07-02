@@ -41,6 +41,11 @@ public static class FeatureNavigationHelper
         return FeatureOids[CurrentIndex];
     }
 
+    public static void SetCurrentOid(long oid)
+    {
+        CurrentIndex = FeatureOids.IndexOf(oid);
+    }
+
     private static async Task LoadFeatureOids()
     {
         await QueuedTask.Run(() =>

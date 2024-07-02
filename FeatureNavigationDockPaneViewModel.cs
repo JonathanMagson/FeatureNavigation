@@ -185,6 +185,7 @@ namespace FeatureNavigation
             set
             {
                 SetProperty(ref _currentObjectId, value, () => CurrentObjectId);
+                UpdateFeatureNavigationHelperIndex(value); // Update the FeatureNavigationHelper index
             }
         }
 
@@ -355,6 +356,13 @@ namespace FeatureNavigation
             }
         }
 
+        private void UpdateFeatureNavigationHelperIndex(string objectId)
+        {
+            if (long.TryParse(objectId, out long oid))
+            {
+                FeatureNavigationHelper.SetCurrentOid(oid);
+            }
+        }
 
         private double CalculateBufferDistance(Envelope extent, float bufferPercentage)
         {
