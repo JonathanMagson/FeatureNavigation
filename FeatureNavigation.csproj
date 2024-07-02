@@ -85,9 +85,6 @@
     <Content Include="Screenshots\screenshot2.png" />
   </ItemGroup>
   <ItemGroup>
-    <Resource Include="FeatureSelection.esriAddinX">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Resource>
     <Resource Include="Images\nextfeature.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Resource>

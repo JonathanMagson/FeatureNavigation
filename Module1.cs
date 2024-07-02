@@ -1,16 +1,3 @@
-//   Copyright 2019 Esri
-
-//   Licensed under the Apache License, Version 2.0 (the "License");
-//   you may not use this file except in compliance with the License.
-//   You may obtain a copy of the License at
-
-//       https://www.apache.org/licenses/LICENSE-2.0
-
-//   Unless required by applicable law or agreed to in writing, software
-//   distributed under the License is distributed on an "AS IS" BASIS,
-//   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//   See the License for the specific language governing permissions and
-//   limitations under the License.
 
 using System;
 using System.Collections.Generic;
@@ -24,30 +11,13 @@ using ArcGIS.Core.Data;
 
 namespace FeatureNavigation
 {
-  /// <summary>
-  /// This sample provides a map tool and a dock pane that allow you to create new selections and manipulate existing selections within the map.
-  /// </summary>
-  /// <remarks>
-  /// 1. In Visual Studio click the Build menu. Then select Build Solution.
-  /// 2. Launch the debugger to open ArcGIS Pro.
-  /// 4. With a map view active go to the Add-In tab and click the Feature Navigation button.
-  /// 5. This will open the Feature Navigation dock pane.
-  /// 6. Select the layer of interest in the Combo box and in the list below it will show the object ids of the selected features.
-  /// ![UI](Screenshots/screenshot1.png)
-  /// 7. Select any of the object ids to see the attributes for that feature.
-  /// 8. Click the select tool next to the layers combo box to interactively select features for that layer in the map.
-  /// 9. Enter a Where clause in the "Select Where" edit box.
-  /// 10. This where clause can be used to further narrow down the selection.
-  /// ![UI](Screenshots/screenshot2.png)
-  /// </remarks>
+
   internal class Module1 : Module
   {
     private static Module1 _this = null;
     private const string _dockPaneID = "FeatureNavigation_FeatureNavigationDockPane";
 
-    /// <summary>
-    /// Retrieve the singleton instance to this module here
-    /// </summary>
+ 
     public static Module1 Current
     {
       get
