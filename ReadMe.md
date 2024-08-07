@@ -5,6 +5,8 @@ Download the add-in installer here: https://github.com/JonathanMagson/FeatureNav
 ## Overview
 The FeatureNavigation Add-in for ArcGIS Pro provides a custom tool and dock pane to manage feature navigation within a map. It enhances navigation through selected features and provides functionalities for zooming into features with a specified buffer size.
 
+Additionally, it records the object ID of the last feature you navigated to in a logfile: C:\Users\<username>\Documents\ArcGIS\AddIns\FeatureNavigationLog.txt
+
 ![image](https://github.com/JonathanMagson/FeatureNavigation/assets/162064664/36b30d45-b882-4d9a-9da2-03c1d05ced3c)
 
 ## Features
