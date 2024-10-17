@@ -17,6 +17,7 @@ using System.IO;
 using System.Reflection;
 using System.ComponentModel;
 using ArcGIS.Core.Internal.Geometry;
+using ArcGIS.Core.Data.Exceptions;
 
 namespace FeatureNavigation
 {
@@ -97,18 +98,104 @@ namespace FeatureNavigation
             get { return _selectedLayer; }
             set
             {
-                SetProperty(ref _selectedLayer, value, () => SelectedLayer);
-                if (_selectedLayer == null)
+                if (_selectedLayer != value)
                 {
-                    ClearLayerSelection();
-                    FrameworkApplication.SetCurrentToolAsync("esri_mapping_exploreTool");
-                    return;
+                    // Clear previous selections and reset fields
+                    ClearLayerData();
+
+                    SetProperty(ref _selectedLayer, value, () => SelectedLayer);
+
+                    if (_selectedLayer == null)
+                    {
+                        ClearLayerSelection();
+                        FrameworkApplication.SetCurrentToolAsync("esri_mapping_exploreTool");
+                        return;
+                    }
+
+                    // Ensure the layer is fully loaded before initializing
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            // Load layer fields asynchronously
+                            await LoadOrderFields();
+
+                            // Check if the new layer has valid fields and set defaults
+                            if (OrderFields.Any())
+                            {
+                                SelectedOrderField = OrderFields.FirstOrDefault();
+                            }
+
+                            // Reset order type to "Ascending" and reflect this in the UI
+                            IsAscendingOrder = true;
+                            SelectedOrderType = "Ascending";  // Update the combo box to reflect the change
+
+                            // Initialize the FeatureNavigationHelper with the selected layer asynchronously
+                            await FeatureNavigationHelper.InitializeLayer(_selectedLayer);
+
+                            // Load features in the selected order asynchronously
+                            await FeatureNavigationHelper.LoadFeatureOids(SelectedOrderField, IsAscendingOrder);
+                        }
+                        catch (GeodatabaseFieldException ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"GeodatabaseFieldException: {ex.Message}");
+                            // Handle exception, possibly notify the user or log it
+                        }
+                    });
                 }
-                FeatureNavigationHelper.InitializeLayer(_selectedLayer);  // Initialize the FeatureNavigationHelper with the selected layer
-                _selectedLayerInfos[_activeMap].SelectedLayer = _selectedLayer;
-                SelectedLayerChanged();
             }
         }
+
+        private async Task SwitchLayer(BasicFeatureLayer newLayer)
+        {
+            try
+            {
+                // Clear previous layer's data and reset selections
+                FeatureNavigationHelper.ClearLayer();
+                SelectedLayer = newLayer;
+
+                if (SelectedLayer == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("SelectedLayer is null after switching.");
+                    return;
+                }
+
+                // Load the new layer's fields
+                await LoadOrderFields();
+
+                // Ensure there are order fields available before assigning
+                if (OrderFields.Any())
+                {
+                    SelectedOrderField = OrderFields.FirstOrDefault();
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("No valid order fields found in the new layer.");
+                    SelectedOrderField = null; // No valid field available
+                    return;
+                }
+
+                // Reset the sorting order
+                IsAscendingOrder = true;
+
+                // Initialize the layer and load features
+                await FeatureNavigationHelper.InitializeLayer(SelectedLayer);
+                await FeatureNavigationHelper.LoadFeatureOids(SelectedOrderField, IsAscendingOrder);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error switching layer: {ex.Message}");
+            }
+        }
+
+        private void ClearLayerData()
+        {
+            // Reset order field, order type, and feature list
+            SelectedOrderField = null;
+            IsAscendingOrder = true;
+            FeatureNavigationHelper.ClearLayer();
+        }
+
 
         private string _whereClause = "";
         public string WhereClause
@@ -208,6 +295,48 @@ namespace FeatureNavigation
             get { return FrameworkApplication.CreateContextMenu("FeatureNavigation_RowContextMenu"); }
         }
 
+        // Property to store the selected order field
+        private Field _selectedOrderField;
+        public Field SelectedOrderField
+        {
+            get { return _selectedOrderField; }
+            set
+            {
+                if (_selectedOrderField != value)
+                {
+                    if (value != null && OrderFields.Contains(value))
+                    {
+                        SetProperty(ref _selectedOrderField, value, () => SelectedOrderField);
+                        FeatureNavigationHelper.LoadFeatureOids(SelectedOrderField, IsAscendingOrder);
+                    }
+                    else
+                    {
+                        // Reset to the first valid field if the selected field doesn't exist in the new layer
+                        System.Diagnostics.Debug.WriteLine("Invalid field selected, resetting to default.");
+                        SetProperty(ref _selectedOrderField, OrderFields.FirstOrDefault(), () => SelectedOrderField);
+
+                        // Reload the features based on the default field
+                        FeatureNavigationHelper.LoadFeatureOids(OrderFields.FirstOrDefault(), IsAscendingOrder);
+                    }
+                }
+            }
+        }
+
+
+
+
+        // Property to store whether the order is ascending or descending
+        private bool _isAscendingOrder = true; // Default to ascending order
+        public bool IsAscendingOrder
+        {
+            get { return _isAscendingOrder; }
+            set
+            {
+                SetProperty(ref _isAscendingOrder, value, () => IsAscendingOrder);
+            }
+        }
+
+
         #region Commands
 
         public ICommand NextFeatureCommand
@@ -247,6 +376,19 @@ namespace FeatureNavigation
                     _zoomToFeatureCommand = new RelayCommand(() => ZoomToFeature(), () => true);
                 }
                 return _zoomToFeatureCommand;
+            }
+        }
+
+        private RelayCommand _openLogFileCommand;
+        public ICommand OpenLogFileCommand
+        {
+            get
+            {
+                if (_openLogFileCommand == null)
+                {
+                    _openLogFileCommand = new RelayCommand(OpenLogFile);
+                }
+                return _openLogFileCommand;
             }
         }
 
@@ -375,11 +517,20 @@ namespace FeatureNavigation
         private void LogCurrentObjectId()
         {
             string logFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ArcGIS", "AddIns", "FeatureNavigationLog.txt");
-            string logEntry = $"{DateTime.Now}: OID {CurrentObjectId} in {SelectedLayer?.Name ?? "No Layer Selected"}";
+            string newLogEntry = $"{DateTime.Now}: OID {CurrentObjectId} in {SelectedLayer?.Name ?? "No Layer Selected"}, Order Field: {SelectedOrderField?.Name}, Order Type: {SelectedOrderType}";
 
             try
             {
-                File.AppendAllText(logFilePath, logEntry + Environment.NewLine);
+                // Read the existing log file
+                string[] existingLogEntries = File.Exists(logFilePath) ? File.ReadAllLines(logFilePath) : new string[0];
+
+                // Prepend the new log entry
+                string[] updatedLogEntries = new string[existingLogEntries.Length + 1];
+                updatedLogEntries[0] = newLogEntry;
+                existingLogEntries.CopyTo(updatedLogEntries, 1);
+
+                // Write the updated log back to the file
+                File.WriteAllLines(logFilePath, updatedLogEntries);
             }
             catch (Exception ex)
             {
@@ -387,6 +538,8 @@ namespace FeatureNavigation
                 System.Diagnostics.Debug.WriteLine($"Failed to write to log file: {ex.Message}");
             }
         }
+
+
 
         private bool ValidateExpression(bool showValidationSuccessMsg)
         {
@@ -411,6 +564,33 @@ namespace FeatureNavigation
         #endregion
 
         #endregion
+
+        // Observable collection for the order fields (attributes)
+        private ObservableCollection<Field> _orderFields = new ObservableCollection<Field>();
+        public ObservableCollection<Field> OrderFields
+        {
+            get { return _orderFields; }
+        }
+
+        // Observable collection for the order types (ascending/descending)
+        private ObservableCollection<string> _orderTypes = new ObservableCollection<string> { "Ascending", "Descending" };
+        public ObservableCollection<string> OrderTypes
+        {
+            get { return _orderTypes; }
+        }
+
+        // The selected order type
+        private string _selectedOrderType;
+        public string SelectedOrderType
+        {
+            get { return _selectedOrderType; }
+            set
+            {
+                SetProperty(ref _selectedOrderType, value, () => SelectedOrderType);
+                IsAscendingOrder = SelectedOrderType == "Ascending"; // Update IsAscendingOrder based on selected type
+                FeatureNavigationHelper.LoadFeatureOids(SelectedOrderField, IsAscendingOrder); // Reload OIDs when order type changes
+            }
+        }
 
         #region Private Methods
 
@@ -592,6 +772,75 @@ namespace FeatureNavigation
                 });
             }
         }
+
+        private async Task LoadOrderFields()
+        {
+            if (SelectedLayer == null) return;
+
+            try
+            {
+                var fields = await QueuedTask.Run(() =>
+                {
+                    var fieldList = new List<Field>();
+                    var layerFields = SelectedLayer.GetTable().GetDefinition().GetFields();
+                    foreach (var field in layerFields)
+                    {
+                        if (field.FieldType != FieldType.Geometry)
+                        {
+                            fieldList.Add(field);
+                        }
+                    }
+                    return fieldList;
+                });
+
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    OrderFields.Clear();
+                    foreach (var field in fields)
+                    {
+                        OrderFields.Add(field);
+                    }
+                });
+
+                // Reset SelectedOrderField if no valid fields exist
+                if (!OrderFields.Any())
+                {
+                    SelectedOrderField = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error loading fields: {ex.Message}");
+            }
+        }
+
+        private void OpenLogFile()
+        {
+            try
+            {
+                string logFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ArcGIS", "AddIns", "FeatureNavigationLog.txt");
+
+                if (File.Exists(logFilePath))
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo()
+                    {
+                        FileName = logFilePath,
+                        UseShellExecute = true // Opens the file with the default associated application
+                    });
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("Log file not found.");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to open log file: {ex.Message}");
+            }
+        }
+
+
+
 
         #endregion
 
