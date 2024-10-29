@@ -1,11 +1,11 @@
 <ArcGIS defaultAssembly="FeatureNavigation.dll" defaultNamespace="FeatureNavigation" xmlns="http://schemas.esri.com/DADF/Registry" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://schemas.esri.com/DADF/Registry file:///C:/Program%20Files/ArcGIS/Pro/bin/ArcGIS.Desktop.Framework.xsd">
-  <AddInInfo id="{777f533a-b0c7-4233-b64e-7c4c2e2c8efa}" version="1.0" desktopVersion="3.0.34047">
+  <AddInInfo id="{777f533a-b0c7-4233-b64e-7c4c2e2c8efa}" version="2.0" desktopVersion="3.1">
     <Name>Feature Navigation</Name>
     <Description>Adds a custom tool to navigate to next and prevous features</Description>
     <Image>Images\AddinDesktop32.png</Image>
     <Author>Jonathan Magson, jonathan.magson@environment.nsw.gov.au</Author>
     <Company>NSW Deptartment of Climate Change, Energy, the Environment and Water (DCCEEW)</Company>
-    <Date>5/11/2015 3:39:00 PM, 2015</Date>
+    <Date>29/10/2024 3:39:00 PM, 2024</Date>
     <Subject>Map Exploration</Subject>
   </AddInInfo>
   <modules>

@@ -1,78 +1,71 @@
+using ArcGIS.Core.Data;
+using ArcGIS.Core.Events;
+using ArcGIS.Core.Geometry;
+using ArcGIS.Core.Internal.Geometry;
+using ArcGIS.Core.Threading.Tasks;
+using ArcGIS.Desktop.Core.Events;
+using ArcGIS.Desktop.Framework;
+using ArcGIS.Desktop.Framework.Contracts;
+using ArcGIS.Desktop.Framework.Threading.Tasks;
+using ArcGIS.Desktop.Mapping;
+using ArcGIS.Desktop.Mapping.Events;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using ArcGIS.Core.Data;
-using ArcGIS.Desktop.Framework.Contracts;
-using ArcGIS.Desktop.Mapping;
-using ArcGIS.Desktop.Mapping.Events;
-using ArcGIS.Desktop.Framework.Threading.Tasks;
-using ArcGIS.Desktop.Framework.Events;
-using ArcGIS.Desktop.Framework;
-using System.Collections.ObjectModel;
-using ArcGIS.Core.Geometry;
-using ArcGIS.Core.CIM;
-using System.IO;
-using System.Reflection;
-using System.ComponentModel;
-using ArcGIS.Core.Internal.Geometry;
-using ArcGIS.Core.Data.Exceptions;
 
 namespace FeatureNavigation
 {
-    internal class FeatureNavigationDockPaneViewModel : DockPane, INotifyPropertyChanged
+    internal class FeatureNavigationDockPaneViewModel : DockPane
     {
         private const string _dockPaneID = "FeatureNavigation_FeatureNavigationDockPane";
-        private const string _selectToolID = "FeatureNavigation_FeatureNavigationTool";
-        private object _lock = new object();
-        private Dictionary<Map, SelectedLayerInfo> _selectedLayerInfos = new Dictionary<Map, SelectedLayerInfo>();
-        private Map _activeMap;
-
-        private RelayCommand _nextFeatureCommand;
-        private RelayCommand _previousFeatureCommand;
-        private RelayCommand _zoomToFeatureCommand;
-
-        private bool _selectToolActive = false;
-        public bool SelectToolActive
-        {
-            get { return _selectToolActive; }
-            set
-            {
-                SetProperty(ref _selectToolActive, value, () => SelectToolActive);
-            }
-        }
 
         protected FeatureNavigationDockPaneViewModel()
         {
-            System.Windows.Data.BindingOperations.EnableCollectionSynchronization(_layers, _lock);
-            System.Windows.Data.BindingOperations.EnableCollectionSynchronization(_layerSelection, _lock);
-            System.Windows.Data.BindingOperations.EnableCollectionSynchronization(_fieldAttributes, _lock);
-            LayersAddedEvent.Subscribe(OnLayersAdded);
-            LayersRemovedEvent.Subscribe(OnLayersRemoved);
-            ActiveToolChangedEvent.Subscribe(OnActiveToolChanged);
+            Layers = new ObservableCollection<BasicFeatureLayer>();
+            OrderFields = new ObservableCollection<Field>();
+            OrderTypes = new ObservableCollection<string> { "Ascending", "Descending" };
+
+            _layerSelection = new ObservableCollection<long?>();
+            _fieldAttributes = new ObservableCollection<FieldAttributeInfo>();
+
+            _selectedLayerInfos = new ConcurrentDictionary<BasicFeatureLayer, LayerState>();
+
+            // Initialize commands
+            _nextFeatureCommand = new RelayCommand(
+                async () => await ExecuteNextFeature(),
+                () => CanExecuteNextFeature());
+
+            _previousFeatureCommand = new RelayCommand(
+                async () => await ExecutePreviousFeature(),
+                () => CanExecutePreviousFeature());
+
+            _zoomToFeatureCommand = new RelayCommand(() => ZoomToCurrentFeature(), () => CanExecuteZoomToFeature());
+
+            _openLogFileCommand = new RelayCommand(OpenLogFile);
+
+            // Subscribe to events
+            _mapViewChangedEvent = ActiveMapViewChangedEvent.Subscribe(OnActiveMapViewChanged);
             MapSelectionChangedEvent.Subscribe(OnSelectionChanged);
-            ActiveMapViewChangedEvent.Subscribe(OnActiveMapViewChanged);
+            _layersAddedEvent = LayersAddedEvent.Subscribe(OnLayersAdded);
+            _layersRemovedEvent = LayersRemovedEvent.Subscribe(OnLayersRemoved);
             MapRemovedEvent.Subscribe(OnMapRemoved);
-        }
 
-        ~FeatureNavigationDockPaneViewModel()
-        {
-            LayersAddedEvent.Unsubscribe(OnLayersAdded);
-            LayersRemovedEvent.Unsubscribe(OnLayersRemoved);
-            ActiveToolChangedEvent.Unsubscribe(OnActiveToolChanged);
-            MapSelectionChangedEvent.Unsubscribe(OnSelectionChanged);
-            ActiveMapViewChangedEvent.Unsubscribe(OnActiveMapViewChanged);
-        }
+            _activeMap = MapView.Active?.Map;
+            _lastActiveMapView = MapView.Active;
 
-        protected override Task InitializeAsync()
-        {
-            if (MapView.Active == null)
-                return Task.FromResult(0);
-
-            _activeMap = MapView.Active.Map;
-            SelectedLayer = null; // Set to null initially
-            return UpdateForActiveMap();
+            if (_activeMap != null)
+            {
+                UpdateForActiveMap();
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("No active map found at startup.");
+            }
         }
 
         internal static void Show()
@@ -84,13 +77,17 @@ namespace FeatureNavigation
             pane.Activate();
         }
 
-        #region Bindable Properties
+        #region Properties
 
-        private ObservableCollection<BasicFeatureLayer> _layers = new ObservableCollection<BasicFeatureLayer>();
-        public ObservableCollection<BasicFeatureLayer> Layers
-        {
-            get { return _layers; }
-        }
+        private Map _activeMap;
+        private MapView _lastActiveMapView;
+        private SubscriptionToken _mapViewChangedEvent;
+        private SubscriptionToken _layersAddedEvent;
+        private SubscriptionToken _layersRemovedEvent;
+
+        private ConcurrentDictionary<BasicFeatureLayer, LayerState> _selectedLayerInfos;
+
+        public ObservableCollection<BasicFeatureLayer> Layers { get; private set; }
 
         private BasicFeatureLayer _selectedLayer;
         public BasicFeatureLayer SelectedLayer
@@ -100,169 +97,212 @@ namespace FeatureNavigation
             {
                 if (_selectedLayer != value)
                 {
-                    // Clear previous selections and reset fields
-                    ClearLayerData();
+                    if (_selectedLayer != null)
+                    {
+                        CacheCurrentLayerState();
+                    }
 
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] Changing SelectedLayer from {_selectedLayer?.Name ?? ""} to {value?.Name ?? ""}");
+
+                    _selectedLayer = value;
                     SetProperty(ref _selectedLayer, value, () => SelectedLayer);
 
                     if (_selectedLayer == null)
                     {
-                        ClearLayerSelection();
-                        FrameworkApplication.SetCurrentToolAsync("esri_mapping_exploreTool");
+                        System.Diagnostics.Debug.WriteLine("[DEBUG] SelectedLayer is null after setting. Exiting setter.");
                         return;
                     }
 
-                    // Ensure the layer is fully loaded before initializing
-                    Task.Run(async () =>
-                    {
-                        try
-                        {
-                            // Load layer fields asynchronously
-                            await LoadOrderFields();
-
-                            // Check if the new layer has valid fields and set defaults
-                            if (OrderFields.Any())
-                            {
-                                SelectedOrderField = OrderFields.FirstOrDefault();
-                            }
-
-                            // Reset order type to "Ascending" and reflect this in the UI
-                            IsAscendingOrder = true;
-                            SelectedOrderType = "Ascending";  // Update the combo box to reflect the change
-
-                            // Initialize the FeatureNavigationHelper with the selected layer asynchronously
-                            await FeatureNavigationHelper.InitializeLayer(_selectedLayer);
-
-                            // Load features in the selected order asynchronously
-                            await FeatureNavigationHelper.LoadFeatureOids(SelectedOrderField, IsAscendingOrder);
-                        }
-                        catch (GeodatabaseFieldException ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"GeodatabaseFieldException: {ex.Message}");
-                            // Handle exception, possibly notify the user or log it
-                        }
-                    });
+                    InitializeSelectedLayer();
                 }
             }
         }
 
-        private async Task SwitchLayer(BasicFeatureLayer newLayer)
+        private async void InitializeSelectedLayer()
         {
-            try
+            // Clear any previously stored layer information
+            FeatureNavigationHelper.ClearLayer();
+
+            // Set the selected layer and load order fields
+            FeatureNavigationHelper.SelectedLayer = _selectedLayer;
+            await LoadOrderFields();
+
+            RestoreLayerState();
+
+            // Ensure the first field is selected if none is restored
+            if (SelectedOrderField == null && OrderFields.Any())
             {
-                // Clear previous layer's data and reset selections
-                FeatureNavigationHelper.ClearLayer();
-                SelectedLayer = newLayer;
-
-                if (SelectedLayer == null)
-                {
-                    System.Diagnostics.Debug.WriteLine("SelectedLayer is null after switching.");
-                    return;
-                }
-
-                // Load the new layer's fields
-                await LoadOrderFields();
-
-                // Ensure there are order fields available before assigning
-                if (OrderFields.Any())
-                {
-                    SelectedOrderField = OrderFields.FirstOrDefault();
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine("No valid order fields found in the new layer.");
-                    SelectedOrderField = null; // No valid field available
-                    return;
-                }
-
-                // Reset the sorting order
-                IsAscendingOrder = true;
-
-                // Initialize the layer and load features
-                await FeatureNavigationHelper.InitializeLayer(SelectedLayer);
-                await FeatureNavigationHelper.LoadFeatureOids(SelectedOrderField, IsAscendingOrder);
+                SelectedOrderField = OrderFields.First();
             }
-            catch (Exception ex)
+
+            // Load the feature OIDs based on the selected order field
+            if (SelectedOrderField != null)
             {
-                System.Diagnostics.Debug.WriteLine($"Error switching layer: {ex.Message}");
+                await FeatureNavigationHelper.LoadFeatureOids(SelectedOrderField, IsAscendingOrder, FilterExpression);
+
+                // Set `CurrentObjectId` to the first OID in the list to start from the first feature
+                if (FeatureNavigationHelper.FeatureOids.Any())
+                {
+                    CurrentObjectId = FeatureNavigationHelper.FeatureOids.First().ToString();
+                    FeatureNavigationHelper.SetCurrentOid(FeatureNavigationHelper.FeatureOids.First());
+                }
+
+                // Update the state of the navigation commands
+                (_nextFeatureCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (_previousFeatureCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (_zoomToFeatureCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
+        }
+
+
+        private void RestoreLayerState()
+        {
+            if (_selectedLayer == null)
+            {
+                System.Diagnostics.Debug.WriteLine("[DEBUG] RestoreLayerState called but _selectedLayer is null. Exiting.");
+                return;
+            }
+
+            var cachedState = FeatureNavigationHelper.RetrieveLayerState(_selectedLayer);
+            if (cachedState != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] Restoring cached state for {_selectedLayer.Name}");
+                SelectedOrderField = OrderFields.FirstOrDefault(f => f.Name == cachedState.OrderFieldName);
+                IsAscendingOrder = cachedState.IsAscendingOrder;
+                SelectedOrderType = IsAscendingOrder ? "Ascending" : "Descending";
+                CurrentObjectId = cachedState.CurrentObjectId;
+                WhereClause = cachedState.WhereClause;
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] No cached state found for {_selectedLayer.Name}. Using defaults.");
+                SelectedOrderField = OrderFields.FirstOrDefault();
+                IsAscendingOrder = true;
+                SelectedOrderType = "Ascending";
+                CurrentObjectId = string.Empty;
+                WhereClause = string.Empty;
+            }
+        }
+
+        private void CacheCurrentLayerState()
+        {
+            if (_selectedLayer != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] Caching layer state for {_selectedLayer.Name}");
+                FeatureNavigationHelper.CacheLayerState(_selectedLayer, SelectedOrderField?.Name, IsAscendingOrder, CurrentObjectId, WhereClause);
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("[DEBUG] CacheCurrentLayerState called but _selectedLayer is null.");
             }
         }
 
         private void ClearLayerData()
         {
-            // Reset order field, order type, and feature list
             SelectedOrderField = null;
             IsAscendingOrder = true;
+            CurrentObjectId = null;
             FeatureNavigationHelper.ClearLayer();
         }
 
-
-        private string _whereClause = "";
-        public string WhereClause
+        private ObservableCollection<Field> _orderFields;
+        public ObservableCollection<Field> OrderFields
         {
-            get { return _whereClause; }
+            get { return _orderFields; }
+            set { SetProperty(ref _orderFields, value, () => OrderFields); }
+        }
+
+        private ObservableCollection<string> _orderTypes;
+        public ObservableCollection<string> OrderTypes
+        {
+            get { return _orderTypes; }
+            set { SetProperty(ref _orderTypes, value, () => OrderTypes); }
+        }
+
+        private Field _selectedOrderField;
+        public Field SelectedOrderField
+        {
+            get { return _selectedOrderField; }
             set
             {
-                SetProperty(ref _whereClause, value, () => WhereClause);
-                IsValid = false;
-                HasError = false;
+                if (_selectedOrderField != value)
+                {
+                    var matchingField = OrderFields.FirstOrDefault(f => f.Name == value?.Name);
+                    if (matchingField != null)
+                    {
+                        SetProperty(ref _selectedOrderField, matchingField, () => SelectedOrderField);
+                        if (FeatureNavigationHelper.SelectedLayer != null)
+                        {
+                            LoadFeatureOidsAndUpdateCommands();
+                        }
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("Invalid field selected, resetting to default.");
+                        SetProperty(ref _selectedOrderField, OrderFields.FirstOrDefault(), () => SelectedOrderField);
+                        if (FeatureNavigationHelper.SelectedLayer != null)
+                        {
+                            LoadFeatureOidsAndUpdateCommands();
+                        }
+                    }
+                }
             }
         }
 
-        private ObservableCollection<long?> _layerSelection = new ObservableCollection<long?>();
-        public ObservableCollection<long?> LayerSelection
+        private async void LoadFeatureOidsAndUpdateCommands()
         {
-            get { return _layerSelection; }
+            await FeatureNavigationHelper.LoadFeatureOids(SelectedOrderField, IsAscendingOrder, FilterExpression);
+            (_nextFeatureCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (_previousFeatureCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (_zoomToFeatureCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
-        private long? _selectedOID;
-        public long? SelectedOID
+        private string _selectedOrderType;
+        public string SelectedOrderType
         {
-            get { return _selectedOID; }
+            get { return _selectedOrderType; }
             set
             {
-                SetProperty(ref _selectedOID, value, () => SelectedOID);
-                _selectedLayerInfos[_activeMap].SelectedOID = _selectedOID;
-                if (_selectedOID.HasValue && MapView.Active != null)
-                    MapView.Active.FlashFeature(SelectedLayer, _selectedOID.Value);
-                ShowAttributes();
+                SetProperty(ref _selectedOrderType, value, () => SelectedOrderType);
+                IsAscendingOrder = SelectedOrderType == "Ascending";
+                if (SelectedOrderField != null && FeatureNavigationHelper.SelectedLayer != null)
+                {
+                    LoadFeatureOidsAndUpdateCommands();
+                }
             }
         }
 
-        private ObservableCollection<FieldAttributeInfo> _fieldAttributes = new ObservableCollection<FieldAttributeInfo>();
-        public ObservableCollection<FieldAttributeInfo> FieldAttributes
+        private string _filterExpression;
+        public string FilterExpression
         {
-            get { return _fieldAttributes; }
-        }
-
-        private FieldAttributeInfo _selectedRow;
-        public FieldAttributeInfo SelectedRow
-        {
-            get { return _selectedRow; }
+            get => _filterExpression;
             set
             {
-                SetProperty(ref _selectedRow, value, () => SelectedRow);
+                if (SetProperty(ref _filterExpression, value, () => FilterExpression))
+                {
+                    ApplyFilter();
+                }
             }
         }
 
-        private bool _hasError = false;
-        public bool HasError
+        private async void ApplyFilter()
         {
-            get { return _hasError; }
-            set
+            if (SelectedOrderField != null && FeatureNavigationHelper.SelectedLayer != null)
             {
-                SetProperty(ref _hasError, value, () => HasError);
+                await FeatureNavigationHelper.LoadFeatureOids(SelectedOrderField, IsAscendingOrder, FilterExpression);
+                (_nextFeatureCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (_previousFeatureCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (_zoomToFeatureCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
         }
 
-        private bool _isValid = false;
-        public bool IsValid
+
+
+        private bool _isAscendingOrder = true;
+        public bool IsAscendingOrder
         {
-            get { return _isValid; }
-            set
-            {
-                SetProperty(ref _isValid, value, () => IsValid);
-            }
+            get { return _isAscendingOrder; }
+            set { SetProperty(ref _isAscendingOrder, value, () => IsAscendingOrder); }
         }
 
         private string _currentObjectId;
@@ -271,12 +311,16 @@ namespace FeatureNavigation
             get { return _currentObjectId; }
             set
             {
-                SetProperty(ref _currentObjectId, value, () => CurrentObjectId);
-                UpdateFeatureNavigationHelperIndex(value); // Update the FeatureNavigationHelper index
+                if (SetProperty(ref _currentObjectId, value, () => CurrentObjectId))
+                {
+                    UpdateFeatureNavigationHelperIndex(value);
+                    ZoomToCurrentFeature();
+                    SelectCurrentFeature();
+                }
             }
         }
 
-        private float _bufferPercentage = 0.0f; // Default buffer percentage
+        private float _bufferPercentage = 0.0f;
         public float BufferPercentage
         {
             get { return _bufferPercentage; }
@@ -295,100 +339,130 @@ namespace FeatureNavigation
             get { return FrameworkApplication.CreateContextMenu("FeatureNavigation_RowContextMenu"); }
         }
 
-        // Property to store the selected order field
-        private Field _selectedOrderField;
-        public Field SelectedOrderField
-        {
-            get { return _selectedOrderField; }
-            set
-            {
-                if (_selectedOrderField != value)
-                {
-                    if (value != null && OrderFields.Contains(value))
-                    {
-                        SetProperty(ref _selectedOrderField, value, () => SelectedOrderField);
-                        FeatureNavigationHelper.LoadFeatureOids(SelectedOrderField, IsAscendingOrder);
-                    }
-                    else
-                    {
-                        // Reset to the first valid field if the selected field doesn't exist in the new layer
-                        System.Diagnostics.Debug.WriteLine("Invalid field selected, resetting to default.");
-                        SetProperty(ref _selectedOrderField, OrderFields.FirstOrDefault(), () => SelectedOrderField);
-
-                        // Reload the features based on the default field
-                        FeatureNavigationHelper.LoadFeatureOids(OrderFields.FirstOrDefault(), IsAscendingOrder);
-                    }
-                }
-            }
-        }
-
-
-
-
-        // Property to store whether the order is ascending or descending
-        private bool _isAscendingOrder = true; // Default to ascending order
-        public bool IsAscendingOrder
-        {
-            get { return _isAscendingOrder; }
-            set
-            {
-                SetProperty(ref _isAscendingOrder, value, () => IsAscendingOrder);
-            }
-        }
-
-
-        #region Commands
-
+        private ICommand _nextFeatureCommand;
         public ICommand NextFeatureCommand
         {
-            get
-            {
-                if (_nextFeatureCommand == null)
-                {
-                    _nextFeatureCommand = new RelayCommand(
-                        async () => await ExecuteNextFeature(),
-                        () => CanExecuteNextFeature());
-                }
-                return _nextFeatureCommand;
-            }
+            get { return _nextFeatureCommand; }
         }
 
+        private ICommand _previousFeatureCommand;
         public ICommand PreviousFeatureCommand
         {
-            get
-            {
-                if (_previousFeatureCommand == null)
-                {
-                    _previousFeatureCommand = new RelayCommand(
-                        async () => await ExecutePreviousFeature(),
-                        () => CanExecutePreviousFeature());
-                }
-                return _previousFeatureCommand;
-            }
+            get { return _previousFeatureCommand; }
         }
 
+        private ICommand _zoomToFeatureCommand;
         public ICommand ZoomToFeatureCommand
         {
-            get
-            {
-                if (_zoomToFeatureCommand == null)
-                {
-                    _zoomToFeatureCommand = new RelayCommand(() => ZoomToFeature(), () => true);
-                }
-                return _zoomToFeatureCommand;
-            }
+            get { return _zoomToFeatureCommand; }
         }
 
-        private RelayCommand _openLogFileCommand;
+        private ICommand _openLogFileCommand;
         public ICommand OpenLogFileCommand
+        {
+            get { return _openLogFileCommand; }
+        }
+
+        private ICommand _enterKeyCommand;
+        public ICommand EnterKeyCommand
         {
             get
             {
-                if (_openLogFileCommand == null)
+                if (_enterKeyCommand == null)
                 {
-                    _openLogFileCommand = new RelayCommand(OpenLogFile);
+                    _enterKeyCommand = new RelayCommand(() =>
+                    {
+                        ZoomToCurrentFeature();
+                        SelectCurrentFeature();
+                    });
                 }
-                return _openLogFileCommand;
+                return _enterKeyCommand;
+            }
+        }
+
+        private ICommand _applyFilterCommand;
+        public ICommand ApplyFilterCommand => _applyFilterCommand ??= new RelayCommand(ApplyFilter);
+
+        private string _whereClause;
+        public string WhereClause
+        {
+            get { return _whereClause; }
+            set
+            {
+                if (SetProperty(ref _whereClause, value, () => WhereClause))
+                {
+                    if (SelectedOrderField != null && FeatureNavigationHelper.SelectedLayer != null)
+                    {
+                        LoadFeatureOidsAndUpdateCommands();
+                    }
+                }
+            }
+        }
+
+        #endregion
+
+        #region Methods
+
+        private void UpdateForActiveMap()
+        {
+            if (_activeMap == null)
+            {
+                System.Diagnostics.Debug.WriteLine("[DEBUG] Active map is null in UpdateForActiveMap. Exiting.");
+                return;
+            }
+
+            System.Diagnostics.Debug.WriteLine($"Active map: {_activeMap?.Name}");
+
+            UpdateLayers();
+        }
+
+        private void UpdateLayers()
+        {
+            if (_activeMap == null)
+                return;
+
+            var previousSelectedLayer = SelectedLayer;
+
+            var mapLayers = _activeMap.GetLayersAsFlattenedList().OfType<BasicFeatureLayer>().ToList();
+
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                foreach (var layer in mapLayers)
+                {
+                    if (!Layers.Contains(layer))
+                    {
+                        Layers.Add(layer);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] Layer added to drop-down: {layer.Name}");
+                    }
+                }
+
+                var layersToRemove = Layers.Except(mapLayers).ToList();
+                foreach (var layer in layersToRemove)
+                {
+                    Layers.Remove(layer);
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] Layer removed from drop-down: {layer.Name}");
+                }
+
+                if (previousSelectedLayer != null && Layers.Contains(previousSelectedLayer))
+                {
+                    SelectedLayer = previousSelectedLayer;
+                }
+                else if (Layers.Count > 0)
+                {
+                    SelectedLayer = Layers.First();
+                }
+                else
+                {
+                    SelectedLayer = null;
+                }
+            });
+        }
+
+        private void UpdateFeatureNavigationHelperIndex(string objectId)
+        {
+            if (long.TryParse(objectId, out long oid))
+            {
+                FeatureNavigationHelper.SetCurrentOid(oid);
             }
         }
 
@@ -402,6 +476,11 @@ namespace FeatureNavigation
             return FeatureNavigationHelper.SelectedLayer != null && FeatureNavigationHelper.FeatureOids.Count > 0;
         }
 
+        private bool CanExecuteZoomToFeature()
+        {
+            return !string.IsNullOrEmpty(CurrentObjectId);
+        }
+
         private async Task ExecuteNextFeature()
         {
             var nextOid = FeatureNavigationHelper.GetNextOid();
@@ -411,12 +490,8 @@ namespace FeatureNavigation
                 {
                     ZoomToFeature(nextOid.Value);
                 });
-                CurrentObjectId = nextOid.Value.ToString(); // Update the CurrentObjectId property
-                LogCurrentObjectId(); // Log the current object ID
-                if (IsSelectFeatureChecked)
-                {
-                    SelectCurrentFeature(); // Select the feature if the checkbox is checked
-                }
+                CurrentObjectId = nextOid.Value.ToString();
+                LogCurrentObjectId();
             }
         }
 
@@ -429,82 +504,111 @@ namespace FeatureNavigation
                 {
                     ZoomToFeature(previousOid.Value);
                 });
-                CurrentObjectId = previousOid.Value.ToString(); // Update the CurrentObjectId property
-                LogCurrentObjectId(); // Log the current object ID
-                if (IsSelectFeatureChecked)
-                {
-                    SelectCurrentFeature(); // Select the feature if the checkbox is checked
-                }
+                CurrentObjectId = previousOid.Value.ToString();
+                LogCurrentObjectId();
             }
         }
 
-        private void ZoomToFeature()
+        private void ZoomToCurrentFeature()
         {
             if (long.TryParse(CurrentObjectId, out long oid))
             {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] Zooming to feature with OID {oid} in layer {SelectedLayer?.Name}");
+
                 QueuedTask.Run(() =>
                 {
                     ZoomToFeature(oid);
                 });
-                LogCurrentObjectId(); // Log the current object ID
             }
         }
 
-        private void ZoomToFeature(long oid)
+        private async Task ZoomToFeature(long oid)
         {
-            var mapView = MapView.Active;
-            if (mapView == null || FeatureNavigationHelper.SelectedLayer == null)
+            // Wait for MapView to be initialized and active
+            MapView mapView = await GetInitializedMapView();
+            if (mapView == null)
+            {
+                System.Diagnostics.Debug.WriteLine("[DEBUG] MapView is not initialized or available. Cannot zoom to feature.");
                 return;
+            }
 
+            if (FeatureNavigationHelper.SelectedLayer == null)
+            {
+                System.Diagnostics.Debug.WriteLine("[DEBUG] SelectedLayer is null in ZoomToFeature. Exiting.");
+                return;
+            }
+
+            // Query for the feature's geometry
             var queryFilter = new QueryFilter { ObjectIDs = new List<long> { oid } };
             using (var rowCursor = FeatureNavigationHelper.SelectedLayer?.Search(queryFilter))
             {
                 if (rowCursor == null || !rowCursor.MoveNext())
                 {
-                    // Handle the case where the feature is not found
                     System.Diagnostics.Debug.WriteLine($"Feature with OID {oid} not found.");
                     return;
                 }
 
-                using (var feature = (Feature)rowCursor.Current)
+                using (var feature = rowCursor.Current as Feature)
                 {
                     var geometry = feature.GetShape();
-                    if (geometry.GeometryType == GeometryType.Point)
+                    if (geometry == null)
                     {
-                        // Create an envelope around the point to achieve the desired scale
-                        const double scaleFactor = 1000; // Desired scale 1:1000
-                        var center = geometry as MapPoint;
-                        var halfWidth = scaleFactor / 2.0;
-                        var halfHeight = scaleFactor / 2.0;
+                        System.Diagnostics.Debug.WriteLine($"Feature with OID {oid} has no geometry.");
+                        return;
+                    }
 
-                        var envelope = new EnvelopeBuilder(center.SpatialReference)
+                    // Adjust zoom based on geometry type
+                    await QueuedTask.Run(() =>
+                    {
+                        if (geometry.GeometryType == GeometryType.Point)
                         {
-                            XMin = center.X - halfWidth,
-                            XMax = center.X + halfWidth,
-                            YMin = center.Y - halfHeight,
-                            YMax = center.Y + halfHeight
-                        }.ToGeometry();
+                            const double scaleFactor = 1000;
+                            var center = geometry as MapPoint;
+                            var halfWidth = scaleFactor / 2.0;
+                            var halfHeight = scaleFactor / 2.0;
 
-                        mapView.ZoomTo(envelope, new TimeSpan(0, 0, 0, 0, 100)); // Faster zoom
-                    }
-                    else
-                    {
-                        var extent = geometry.Extent;
-                        var bufferDistance = CalculateBufferDistance(extent, BufferPercentage);
-                        var buffer = GeometryEngine.Instance.Buffer(geometry, bufferDistance);
-                        mapView.ZoomTo(buffer, new TimeSpan(0, 0, 0, 0, 100)); // Faster zoom
-                    }
+                            var envelope = new EnvelopeBuilder(center.SpatialReference)
+                            {
+                                XMin = center.X - halfWidth,
+                                XMax = center.X + halfWidth,
+                                YMin = center.Y - halfHeight,
+                                YMax = center.Y + halfHeight
+                            }.ToGeometry();
+
+                            mapView.ZoomTo(envelope, new TimeSpan(0, 0, 0, 0, 100));
+                        }
+                        else
+                        {
+                            var extent = geometry.Extent;
+                            var bufferDistance = CalculateBufferDistance(extent, BufferPercentage);
+                            var buffer = GeometryEngine.Instance.Buffer(geometry, bufferDistance);
+                            mapView.ZoomTo(buffer, new TimeSpan(0, 0, 0, 0, 100));
+                        }
+                    });
                 }
             }
         }
 
-        private void UpdateFeatureNavigationHelperIndex(string objectId)
+        // Helper method to retry getting an active MapView
+        private async Task<MapView> GetInitializedMapView()
         {
-            if (long.TryParse(objectId, out long oid))
+            MapView mapView = null;
+            int retryCount = 5;
+            int delayMilliseconds = 500;
+
+            while (retryCount > 0)
             {
-                FeatureNavigationHelper.SetCurrentOid(oid);
+                mapView = MapView.Active;
+                if (mapView != null) return mapView;
+
+                await Task.Delay(delayMilliseconds); // Wait before retrying
+                retryCount--;
             }
+
+            return null; // MapView is not available even after retries
         }
+
+
 
         private double CalculateBufferDistance(Envelope extent, float bufferPercentage)
         {
@@ -521,255 +625,90 @@ namespace FeatureNavigation
 
             try
             {
-                // Read the existing log file
                 string[] existingLogEntries = File.Exists(logFilePath) ? File.ReadAllLines(logFilePath) : new string[0];
-
-                // Prepend the new log entry
                 string[] updatedLogEntries = new string[existingLogEntries.Length + 1];
                 updatedLogEntries[0] = newLogEntry;
                 existingLogEntries.CopyTo(updatedLogEntries, 1);
 
-                // Write the updated log back to the file
                 File.WriteAllLines(logFilePath, updatedLogEntries);
             }
             catch (Exception ex)
             {
-                // Handle any exceptions here (e.g., log to a different location, show a message to the user, etc.)
                 System.Diagnostics.Debug.WriteLine($"Failed to write to log file: {ex.Message}");
             }
         }
 
-
-
-        private bool ValidateExpression(bool showValidationSuccessMsg)
+        private void OpenLogFile()
         {
             try
             {
-                var qf = new QueryFilter() { WhereClause = WhereClause };
-                SelectedLayer?.Search(qf);
-            }
-            catch (Exception)
-            {
-                HasError = true;
-                IsValid = false;
-                return false;
-            }
+                string logFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ArcGIS", "AddIns", "FeatureNavigationLog.txt");
 
-            if (showValidationSuccessMsg)
-                IsValid = true;
-            HasError = false;
-            return true;
-        }
-
-        #endregion
-
-        #endregion
-
-        // Observable collection for the order fields (attributes)
-        private ObservableCollection<Field> _orderFields = new ObservableCollection<Field>();
-        public ObservableCollection<Field> OrderFields
-        {
-            get { return _orderFields; }
-        }
-
-        // Observable collection for the order types (ascending/descending)
-        private ObservableCollection<string> _orderTypes = new ObservableCollection<string> { "Ascending", "Descending" };
-        public ObservableCollection<string> OrderTypes
-        {
-            get { return _orderTypes; }
-        }
-
-        // The selected order type
-        private string _selectedOrderType;
-        public string SelectedOrderType
-        {
-            get { return _selectedOrderType; }
-            set
-            {
-                SetProperty(ref _selectedOrderType, value, () => SelectedOrderType);
-                IsAscendingOrder = SelectedOrderType == "Ascending"; // Update IsAscendingOrder based on selected type
-                FeatureNavigationHelper.LoadFeatureOids(SelectedOrderField, IsAscendingOrder); // Reload OIDs when order type changes
-            }
-        }
-
-        #region Private Methods
-
-        private Task UpdateForActiveMap(bool activeMapChanged = true, Dictionary<MapMember, List<long>> mapSelection = null)
-        {
-            return QueuedTask.Run(() =>
-            {
-                SelectedLayerInfo selectedLayerInfo = null;
-                if (!_selectedLayerInfos.ContainsKey(_activeMap))
+                if (File.Exists(logFilePath))
                 {
-                    selectedLayerInfo = new SelectedLayerInfo();
-                    _selectedLayerInfos.Add(_activeMap, selectedLayerInfo);
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo()
+                    {
+                        FileName = logFilePath,
+                        UseShellExecute = true
+                    });
                 }
                 else
-                    selectedLayerInfo = _selectedLayerInfos[_activeMap];
-
-                if (activeMapChanged)
                 {
-                    RefreshLayerCollection();
-
-                    SetProperty(ref _selectedLayer, selectedLayerInfo.SelectedLayer, () => SelectedLayer);
-                    if (_selectedLayer == null)
-                    {
-                        FrameworkApplication.SetCurrentToolAsync("esri_mapping_exploreTool");
-                        return;
-                    }
-                    selectedLayerInfo.SelectedLayer = SelectedLayer;
-                }
-
-                if (SelectedLayer == null)
-                    RefreshSelectionOIDs(new List<long>());
-                else
-                {
-                    List<long> oids = new List<long>();
-                    if (mapSelection != null)
-                    {
-                        if (mapSelection.ContainsKey(SelectedLayer))
-                            oids.AddRange(mapSelection[SelectedLayer]);
-                    }
-                    else
-                    {
-                        oids.AddRange(SelectedLayer.GetSelection().GetObjectIDs());
-                    }
-                    RefreshSelectionOIDs(oids);
-                }
-
-                SetProperty(ref _selectedOID, (selectedLayerInfo.SelectedOID != null && LayerSelection.Contains(selectedLayerInfo.SelectedOID)) ? selectedLayerInfo.SelectedOID : LayerSelection.FirstOrDefault(), () => SelectedOID);
-                selectedLayerInfo.SelectedOID = SelectedOID;
-                ShowAttributes();
-            });
-        }
-
-        private void RefreshLayerCollection()
-        {
-            Layers.Clear();
-            if (_activeMap == null)
-                return;
-
-            var layers = _activeMap.GetLayersAsFlattenedList().OfType<BasicFeatureLayer>();
-            lock (_lock)
-            {
-                foreach (var layer in layers)
-                {
-                    Layers.Add(layer);
+                    System.Diagnostics.Debug.WriteLine("Log file not found.");
                 }
             }
-        }
-
-        private Task SelectedLayerChanged()
-        {
-            return QueuedTask.Run(() =>
+            catch (Exception ex)
             {
-                if (SelectedLayer == null)
-                    RefreshSelectionOIDs(new List<long>());
-                else
-                {
-                    var selection = SelectedLayer.GetSelection();
-                    RefreshSelectionOIDs(selection.GetObjectIDs());
-                }
-                SelectedOID = LayerSelection.FirstOrDefault();
-            });
-        }
-
-        private void RefreshSelectionOIDs(IEnumerable<long> oids)
-        {
-            FieldAttributes.Clear();
-            SetProperty(ref _selectedOID, null, () => SelectedOID);
-            LayerSelection.Clear();
-            lock (_lock)
-            {
-                foreach (var oid in oids)
-                {
-                    LayerSelection.Add(oid);
-                }
+                System.Diagnostics.Debug.WriteLine($"Failed to open log file: {ex.Message}");
             }
-        }
-
-        private Task ShowAttributes()
-        {
-            return QueuedTask.Run(() =>
-            {
-                try
-                {
-                    _fieldAttributes.Clear();
-                    if (SelectedLayer == null || SelectedOID == null)
-                        return;
-
-                    var oidField = SelectedLayer.GetTable().GetDefinition().GetObjectIDField();
-                    var qf = new QueryFilter() { WhereClause = string.Format("{0} = {1}", oidField, SelectedOID) };
-                    var cursor = SelectedLayer.Search(qf);
-                    Row row = null;
-
-                    if (!cursor.MoveNext()) return;
-
-                    using (row = cursor.Current)
-                    {
-                        var fields = row.GetFields();
-                        lock (_lock)
-                        {
-                            foreach (ArcGIS.Core.Data.Field field in fields)
-                            {
-                                if (field.FieldType == FieldType.Geometry)
-                                    continue;
-                                var val = row[field.Name];
-                                FieldAttributeInfo fa = new FieldAttributeInfo(field, (val is DBNull || val == null) ? null : val.ToString());
-                                _fieldAttributes.Add(fa);
-                            }
-                        }
-                    }
-                }
-                catch (Exception)
-                {
-                }
-            });
-        }
-
-        private Task ModifyLayerSelection(SelectionCombinationMethod method)
-        {
-            return QueuedTask.Run(() =>
-            {
-                if (MapView.Active == null || SelectedLayer == null || WhereClause == null)
-                    return;
-
-                if (!ValidateExpression(false))
-                    return;
-
-                SelectedLayer.Select(new QueryFilter() { WhereClause = WhereClause }, method);
-            });
         }
 
         private void SelectCurrentFeature()
         {
+            if (!IsSelectFeatureChecked)
+            {
+                return;
+            }
+
             if (long.TryParse(CurrentObjectId, out long oid))
             {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] Selecting feature with OID {oid} in layer {SelectedLayer?.Name}");
+
+                if (SelectedLayer == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] Cannot select feature as SelectedLayer is null.");
+                    return;
+                }
+
                 QueuedTask.Run(() =>
                 {
-                    // Clear the previous selection
-                    SelectedLayer.ClearSelection();
-
-                    // Create a query filter to select the current feature
-                    var queryFilter = new QueryFilter
+                    try
                     {
-                        ObjectIDs = new List<long> { oid }
-                    };
+                        SelectedLayer.ClearSelection();
+                        var queryFilter = new QueryFilter { ObjectIDs = new List<long> { oid } };
+                        SelectedLayer.Select(queryFilter, SelectionCombinationMethod.New);
 
-                    // Select the current feature
-                    SelectedLayer.Select(queryFilter, SelectionCombinationMethod.New);
+                        var mapView = GetMapView();
+                        if (mapView != null)
+                        {
+                            mapView.FlashFeature(SelectedLayer, oid);
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine("[DEBUG] MapView is null in SelectCurrentFeature.");
+                        }
+
+                        System.Diagnostics.Debug.WriteLine("[DEBUG] Feature selected and flashed on map.");
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] Error selecting feature: {ex.Message}");
+                    }
                 });
             }
-        }
-
-        private void ClearLayerSelection()
-        {
-            if (SelectedLayer != null)
+            else
             {
-                QueuedTask.Run(() =>
-                {
-                    SelectedLayer.ClearSelection();
-                });
+                System.Diagnostics.Debug.WriteLine("[DEBUG] Invalid OID for feature selection.");
             }
         }
 
@@ -793,16 +732,20 @@ namespace FeatureNavigation
                     return fieldList;
                 });
 
-                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     OrderFields.Clear();
                     foreach (var field in fields)
                     {
                         OrderFields.Add(field);
                     }
+
+                    if (SelectedOrderField == null && OrderFields.Any())
+                    {
+                        SelectedOrderField = OrderFields.First();
+                    }
                 });
 
-                // Reset SelectedOrderField if no valid fields exist
                 if (!OrderFields.Any())
                 {
                     SelectedOrderField = null;
@@ -814,33 +757,10 @@ namespace FeatureNavigation
             }
         }
 
-        private void OpenLogFile()
+        private void ShowAttributes()
         {
-            try
-            {
-                string logFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ArcGIS", "AddIns", "FeatureNavigationLog.txt");
-
-                if (File.Exists(logFilePath))
-                {
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo()
-                    {
-                        FileName = logFilePath,
-                        UseShellExecute = true // Opens the file with the default associated application
-                    });
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine("Log file not found.");
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to open log file: {ex.Message}");
-            }
+            // Implement as needed
         }
-
-
-
 
         #endregion
 
@@ -848,130 +768,339 @@ namespace FeatureNavigation
 
         private void OnActiveMapViewChanged(ActiveMapViewChangedEventArgs args)
         {
-            if (args.IncomingView == null)
+            if (args.IncomingView != null)
             {
-                SetProperty(ref _selectedLayer, null, () => SelectedLayer);
-                _layers.Clear();
-                SetProperty(ref _selectedOID, null, () => SelectedOID);
-                _layerSelection.Clear();
-                _fieldAttributes.Clear();
-                return;
-            }
+                _activeMap = args.IncomingView.Map;
+                _lastActiveMapView = args.IncomingView;
 
-            _activeMap = args.IncomingView.Map;
-            UpdateForActiveMap();
+                UpdateForActiveMap();
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("[DEBUG] Active map view changed to null.");
+            }
+        }
+
+        private MapView GetMapView()
+        {
+            return MapView.Active ?? _lastActiveMapView;
         }
 
         private void OnSelectionChanged(MapSelectionChangedEventArgs args)
         {
-            if (args.Map != _activeMap)
-                return;
-
-            UpdateForActiveMap(false, args.Selection.ToDictionary());
+            // Implementation of selection changed event handler if needed
         }
 
         private void OnLayersRemoved(LayerEventsArgs args)
         {
-            foreach (var layer in args.Layers)
-            {
-                if (layer.Map == _activeMap)
-                {
-                    if (Layers.Contains(layer))
-                        Layers.Remove((BasicFeatureLayer)layer);
-                }
-            }
+            if (_activeMap == null)
+                return;
 
-            if (SelectedLayer == null)
+            var currentMapLayers = _activeMap.GetLayersAsFlattenedList().OfType<BasicFeatureLayer>().ToList();
+
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
-                SelectedLayer = Layers.FirstOrDefault();
-                SelectedLayerChanged();
-            }
+                foreach (var layer in args.Layers.OfType<BasicFeatureLayer>())
+                {
+                    if (layer.Map == _activeMap)
+                    {
+                        if (!currentMapLayers.Contains(layer) && Layers.Contains(layer))
+                        {
+                            Layers.Remove(layer);
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] Layer removed from drop-down: {layer.Name}");
+                        }
+                    }
+                }
+
+                if (SelectedLayer == null && Layers.Count > 0)
+                {
+                    SelectedLayer = Layers.First();
+                }
+            });
         }
 
         private void OnLayersAdded(LayerEventsArgs args)
         {
-            foreach (var layer in args.Layers)
+            if (_activeMap == null)
+                return;
+
+            foreach (var layer in args.Layers.OfType<BasicFeatureLayer>())
             {
-                if (layer.Map == _activeMap && layer is BasicFeatureLayer)
+                if (layer.Map == _activeMap && !Layers.Contains(layer))
                 {
-                    Layers.Add((BasicFeatureLayer)layer);
+                    Layers.Add(layer);
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] Layer added to drop-down: {layer.Name}");
+
                     if (SelectedLayer == null)
-                        SelectedLayer = (BasicFeatureLayer)layer;
+                    {
+                        SelectedLayer = layer;
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] Selected layer set to: {SelectedLayer?.Name}");
+                    }
                 }
             }
         }
 
         private void OnMapRemoved(MapRemovedEventArgs args)
         {
-            var map = _selectedLayerInfos.Where(kvp => kvp.Key.URI == args.MapPath).FirstOrDefault().Key;
-            if (map != null)
-                _selectedLayerInfos.Remove(map);
-        }
-
-        private void OnActiveToolChanged(ToolEventArgs args)
-        {
-            SetProperty(ref _selectToolActive, (args.CurrentID == _selectToolID), () => SelectToolActive);
-        }
-
-        internal bool ValidateExpresion(bool v)
-        {
-            throw new NotImplementedException();
+            // Implementation of map removed event handler if needed
         }
 
         #endregion
 
-        public event PropertyChangedEventHandler PropertyChanged;
-
-        protected void OnPropertyChanged(string propertyName)
+        private ObservableCollection<long?> _layerSelection;
+        public ObservableCollection<long?> LayerSelection
         {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            get { return _layerSelection; }
         }
 
-        protected bool SetProperty<T>(ref T storage, T value, System.Linq.Expressions.Expression<Func<T>> propertyExpression)
+        private long? _selectedOID;
+        public long? SelectedOID
         {
-            if (EqualityComparer<T>.Default.Equals(storage, value))
-                return false;
-
-            storage = value;
-            var memberExpression = (System.Linq.Expressions.MemberExpression)propertyExpression.Body;
-            OnPropertyChanged(memberExpression.Member.Name);
-            return true;
+            get { return _selectedOID; }
+            set
+            {
+                SetProperty(ref _selectedOID, value, () => SelectedOID);
+            }
         }
+
+        private ObservableCollection<FieldAttributeInfo> _fieldAttributes;
+        public ObservableCollection<FieldAttributeInfo> FieldAttributes
+        {
+            get { return _fieldAttributes; }
+        }
+
+        private FieldAttributeInfo _selectedRow;
+        public FieldAttributeInfo SelectedRow
+        {
+            get { return _selectedRow; }
+            set
+            {
+                SetProperty(ref _selectedRow, value, () => SelectedRow);
+            }
+        }
+    }
+
+    internal static class FeatureNavigationHelper
+    {
+        public static BasicFeatureLayer SelectedLayer { get; set; }
+
+        public static List<long> FeatureOids { get; private set; } = new List<long>();
+
+        private static int _currentIndex = -1;
+
+        private static ConcurrentDictionary<BasicFeatureLayer, LayerState> _layerStates = new ConcurrentDictionary<BasicFeatureLayer, LayerState>();
+
+        public static FeatureNavigationDockPaneViewModel FeatureNavigationDockPaneViewModelInstance { get; set; }
+
+        public static async Task LoadFeatureOids(Field orderField, bool isAscendingOrder)
+        {
+            if (SelectedLayer == null)
+            {
+                System.Diagnostics.Debug.WriteLine("[DEBUG] SelectedLayer is null in LoadFeatureOids");
+                return;
+            }
+
+            if (orderField == null)
+            {
+                System.Diagnostics.Debug.WriteLine("[DEBUG] orderField is null in LoadFeatureOids");
+                return;
+            }
+
+            await QueuedTask.Run(() =>
+            {
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] Loading feature OIDs for layer {SelectedLayer.Name}");
+
+                    FeatureOids.Clear();
+
+                    var table = SelectedLayer.GetTable();
+                    var queryFilter = new QueryFilter()
+                    {
+                        SubFields = SelectedLayer.GetTable().GetDefinition().GetObjectIDField(),
+                        WhereClause = "1=1",
+                        PostfixClause = $"ORDER BY {orderField.Name} {(isAscendingOrder ? "ASC" : "DESC")}"
+                    };
+
+                    if (!string.IsNullOrEmpty(FeatureNavigationDockPaneViewModelInstance?.WhereClause))
+                    {
+                        queryFilter.WhereClause = FeatureNavigationDockPaneViewModelInstance.WhereClause;
+                    }
+
+                    using (var rowCursor = table.Search(queryFilter, false))
+                    {
+                        while (rowCursor.MoveNext())
+                        {
+                            using (var row = rowCursor.Current)
+                            {
+                                FeatureOids.Add(row.GetObjectID());
+                            }
+                        }
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] Total Features Loaded: {FeatureOids.Count}");
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error loading feature OIDs: {ex.Message}");
+                }
+            });
+        }
+
+        public static long? GetNextOid()
+        {
+            if (FeatureOids.Count == 0)
+                return null;
+
+            _currentIndex++;
+
+            if (_currentIndex >= FeatureOids.Count)
+            {
+                _currentIndex = 0;
+            }
+
+            return FeatureOids[_currentIndex];
+        }
+
+        public static long? GetPreviousOid()
+        {
+            if (FeatureOids.Count == 0)
+                return null;
+
+            _currentIndex--;
+
+            if (_currentIndex < 0)
+            {
+                _currentIndex = FeatureOids.Count - 1;
+            }
+
+            return FeatureOids[_currentIndex];
+        }
+
+        public static void SetCurrentOid(long oid)
+        {
+            _currentIndex = FeatureOids.IndexOf(oid);
+        }
+
+        public static void CacheLayerState(BasicFeatureLayer layer, string orderFieldName, bool isAscendingOrder, string currentObjectId, string whereClause)
+        {
+            if (layer == null)
+                return;
+
+            var layerState = new LayerState
+            {
+                Layer = layer,
+                OrderFieldName = orderFieldName,
+                IsAscendingOrder = isAscendingOrder,
+                CurrentObjectId = currentObjectId,
+                WhereClause = whereClause
+            };
+
+            _layerStates[layer] = layerState;
+        }
+
+        public static LayerState RetrieveLayerState(BasicFeatureLayer layer)
+        {
+            if (layer == null)
+                return null;
+
+            if (_layerStates.TryGetValue(layer, out var state))
+            {
+                return state;
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        public static void ClearLayer()
+        {
+            SelectedLayer = null;
+            FeatureOids.Clear();
+            _currentIndex = -1;
+        }
+
+
+        public static async Task LoadFeatureOids(Field orderField, bool isAscendingOrder, string filterExpression = null)
+        {
+            if (SelectedLayer == null)
+            {
+                System.Diagnostics.Debug.WriteLine("[DEBUG] SelectedLayer is null in LoadFeatureOids");
+                return;
+            }
+
+            if (orderField == null)
+            {
+                System.Diagnostics.Debug.WriteLine("[DEBUG] orderField is null in LoadFeatureOids");
+                return;
+            }
+
+            await QueuedTask.Run(() =>
+            {
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] Loading feature OIDs for layer {SelectedLayer.Name}");
+
+                    FeatureOids.Clear();
+
+                    var table = SelectedLayer.GetTable();
+                    var queryFilter = new QueryFilter()
+                    {
+                        SubFields = SelectedLayer.GetTable().GetDefinition().GetObjectIDField(),
+                        WhereClause = "1=1",
+                        PostfixClause = $"ORDER BY {orderField.Name} {(isAscendingOrder ? "ASC" : "DESC")}"
+                    };
+
+                    // Apply the filter expression if it’s provided
+                    if (!string.IsNullOrEmpty(filterExpression))
+                    {
+                        queryFilter.WhereClause += $" AND ({filterExpression})";
+                    }
+
+                    using (var rowCursor = table.Search(queryFilter, false))
+                    {
+                        while (rowCursor.MoveNext())
+                        {
+                            using (var row = rowCursor.Current)
+                            {
+                                FeatureOids.Add(row.GetObjectID());
+                            }
+                        }
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] Total Features Loaded: {FeatureOids.Count}");
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error loading feature OIDs: {ex.Message}");
+                }
+            });
+        }
+    }
+
+    public class LayerState
+    {
+        public BasicFeatureLayer Layer { get; set; }
+        public string OrderFieldName { get; set; }
+        public bool IsAscendingOrder { get; set; }
+        public string CurrentObjectId { get; set; }
+        public string WhereClause { get; set; }
     }
 
     internal class FieldAttributeInfo
     {
-        private string _fieldName;
-        private string _fieldAlias;
-        private string _fieldValue;
-        private FieldType _fieldType;
+        public string FieldName { get; }
+        public string FieldAlias { get; }
+        public string FieldValue { get; }
+        public FieldType FieldType { get; }
 
         internal FieldAttributeInfo(Field field, string fieldValue)
         {
-            _fieldName = field.Name;
-            _fieldAlias = field.AliasName;
-            _fieldValue = fieldValue;
-            _fieldType = field.FieldType;
-        }
-
-        public string FieldName
-        {
-            get { return _fieldName; }
-        }
-
-        public string FieldAlias
-        {
-            get { return _fieldAlias; }
-        }
-
-        public string FieldValue
-        {
-            get { return _fieldValue; }
-        }
-
-        public FieldType FieldType
-        {
-            get { return _fieldType; }
+            FieldName = field.Name;
+            FieldAlias = field.AliasName;
+            FieldValue = fieldValue;
+            FieldType = field.FieldType;
         }
     }
 
@@ -985,7 +1114,6 @@ namespace FeatureNavigation
         }
 
         public BasicFeatureLayer SelectedLayer { get; set; }
-
         public long? SelectedOID { get; set; }
     }
 
@@ -994,6 +1122,8 @@ namespace FeatureNavigation
         protected override void OnClick()
         {
             FeatureNavigationDockPaneViewModel.Show();
+            FeatureNavigationHelper.FeatureNavigationDockPaneViewModelInstance = FrameworkApplication.DockPaneManager.Find("FeatureNavigation_FeatureNavigationDockPane") as FeatureNavigationDockPaneViewModel;
         }
     }
 }
+    

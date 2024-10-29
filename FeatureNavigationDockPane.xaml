@@ -1,16 +1,17 @@
 <UserControl x:Class="FeatureNavigation.FeatureNavigationDockPaneView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:FeatureNavigation"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:extensions="clr-namespace:ArcGIS.Desktop.Extensions;assembly=ArcGIS.Desktop.Extensions"
              mc:Ignorable="d"
-             d:DataContext="{Binding Path=FeatureNavigation.FeatureNavigationDockPaneViewModel}"
              d:DesignHeight="300" Width="304">
 
     <DockPanel LastChildFill="True" Margin="4">
         <Grid DockPanel.Dock="Top" Margin="5">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -24,40 +25,50 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- Navigation Buttons and Select Feature Checkbox -->
+            <!-- Navigation Buttons, Select Feature Checkbox, and Log File Button -->
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Grid.Row="0" Grid.ColumnSpan="2" Margin="2">
-                <Button Command="{Binding PreviousFeatureCommand}" ToolTip="Go to Previous Feature" Width="32" Height="32" Margin="2,0">
+                <Button Command="{Binding PreviousFeatureCommand}" ToolTip="Go to Previous Feature" Width="50" Height="32" Margin="2,0">
                     <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="16" Text="&#xE76B;" />
                 </Button>
-                <Button Command="{Binding NextFeatureCommand}" ToolTip="Go to Next Feature" Width="32" Height="32" Margin="2,0">
+                <Button Command="{Binding NextFeatureCommand}" ToolTip="Go to Next Feature" Width="50" Height="32" Margin="2,0">
                     <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="16" Text="&#xE76C;" />
                 </Button>
                 <!-- Select Feature Checkbox -->
                 <CheckBox Content="Select" IsChecked="{Binding IsSelectFeatureChecked}" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                <!-- Log File Button -->
+                <Button Command="{Binding OpenLogFileCommand}" Content="Log" Width="40" Height="24" Margin="5,0,0,0" VerticalAlignment="Center"/>
             </StackPanel>
 
             <!-- Current Object ID -->
             <TextBlock Text="Current Object ID: " VerticalAlignment="Center" Grid.Row="1" Grid.Column="0" Margin="0,3,5,0"/>
-            <TextBox Text="{Binding CurrentObjectId, UpdateSourceTrigger=PropertyChanged}" Grid.Row="1" Grid.Column="1" Width="100" Height="24" Margin="-80,3,5,0" VerticalAlignment="Center" KeyDown="TextBox_KeyDown"/>
+            <TextBox Text="{Binding CurrentObjectId, UpdateSourceTrigger=PropertyChanged}" Grid.Row="1" Grid.Column="1" Width="150" Height="24" Margin="0,3,5,0" VerticalAlignment="Center">
+                <TextBox.InputBindings>
+                    <KeyBinding Key="Enter" Command="{Binding EnterKeyCommand}" />
+                </TextBox.InputBindings>
+            </TextBox>
 
             <!-- Layer Selection -->
             <TextBlock Text="Layer: " VerticalAlignment="Center" Grid.Row="2" Grid.Column="0" Margin="0,3,5,0"/>
-            <ComboBox ItemsSource="{Binding Layers}" SelectedItem="{Binding SelectedLayer}" DisplayMemberPath="Name" Grid.Row="2" Grid.Column="1" Width="100" Margin="-80,3,5,0"/>
+            <ComboBox ItemsSource="{Binding Layers}" SelectedItem="{Binding SelectedLayer}" DisplayMemberPath="Name" Grid.Row="2" Grid.Column="1" Width="150" Margin="0,3,5,0"/>
 
             <!-- Buffer Percentage -->
             <TextBlock Text="Zoom Buffer (%): " VerticalAlignment="Center" Grid.Row="3" Grid.Column="0" Margin="0,3,5,0"/>
-            <TextBox Text="{Binding BufferPercentage, UpdateSourceTrigger=PropertyChanged}" Grid.Row="3" Grid.Column="1" Width="100" Height="24" Margin="-80,3,5,0" VerticalAlignment="Center"/>
+            <TextBox Text="{Binding BufferPercentage, UpdateSourceTrigger=PropertyChanged}" Grid.Row="3" Grid.Column="1" Width="150" Height="24" Margin="0,3,5,0" VerticalAlignment="Center"/>
 
             <!-- Order Field Dropdown -->
             <TextBlock Text="Order Field: " VerticalAlignment="Center" Grid.Row="4" Grid.Column="0" Margin="0,3,5,0"/>
-            <ComboBox ItemsSource="{Binding OrderFields}" SelectedItem="{Binding SelectedOrderField}" DisplayMemberPath="Name" Grid.Row="4" Grid.Column="1" Width="100" Margin="-80,3,5,0"/>
+            <ComboBox ItemsSource="{Binding OrderFields}" SelectedItem="{Binding SelectedOrderField}" DisplayMemberPath="Name" Grid.Row="4" Grid.Column="1" Width="150" Margin="0,3,5,0"/>
 
             <!-- Order Type Dropdown -->
             <TextBlock Text="Order Type: " VerticalAlignment="Center" Grid.Row="5" Grid.Column="0" Margin="0,3,5,0"/>
-            <ComboBox ItemsSource="{Binding OrderTypes}" SelectedItem="{Binding SelectedOrderType}" Grid.Row="5" Grid.Column="1" Width="100" Margin="-80,3,5,0"/>
+            <ComboBox ItemsSource="{Binding OrderTypes}" SelectedItem="{Binding SelectedOrderType}" Grid.Row="5" Grid.Column="1" Width="150" Margin="0,3,5,0"/>
 
-            <!-- Open Log Button -->
-            <Button Command="{Binding OpenLogFileCommand}" Content="Log File" Grid.Row="6" Grid.Column="0" Width="60" Height="22" HorizontalAlignment="Left" Margin="0,5,0,0"/>
+            <!-- Filter Expression TextBox and Apply Button -->
+            <TextBlock Text="Filter Expression:" VerticalAlignment="Center" Grid.Row="6" Grid.Column="0" Margin="0,3,5,0"/>
+            <TextBox x:Name="FilterExpressionTextBox" Text="{Binding FilterExpression, UpdateSourceTrigger=PropertyChanged}" Grid.Row="6" Grid.Column="1" Width="150" Height="24" Margin="0,3,5,0" VerticalAlignment="Center"/>
+
+            <!-- Apply Filter Button -->
+            <Button Content="Apply Filter" Command="{Binding ApplyFilterCommand}" Grid.Row="7" Grid.Column="1" Width="100" Height="24" Margin="0,3,5,0" HorizontalAlignment="Center" />
         </Grid>
     </DockPanel>
 </UserControl>
