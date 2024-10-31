@@ -824,20 +824,25 @@ namespace FeatureNavigation
             if (_activeMap == null)
                 return;
 
-            foreach (var layer in args.Layers.OfType<BasicFeatureLayer>())
+            // Ensure UI thread access for adding to ObservableCollection
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
-                if (layer.Map == _activeMap && !Layers.Contains(layer))
+                foreach (var layer in args.Layers.OfType<BasicFeatureLayer>())
                 {
-                    Layers.Add(layer);
-                    System.Diagnostics.Debug.WriteLine($"[DEBUG] Layer added to drop-down: {layer.Name}");
-
-                    if (SelectedLayer == null)
+                    if (layer.Map == _activeMap && !Layers.Contains(layer))
                     {
-                        SelectedLayer = layer;
-                        System.Diagnostics.Debug.WriteLine($"[DEBUG] Selected layer set to: {SelectedLayer?.Name}");
+                        Layers.Add(layer);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] Layer added to drop-down: {layer.Name}");
+
+                        // Set selected layer if none is set
+                        if (SelectedLayer == null)
+                        {
+                            SelectedLayer = layer;
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] Selected layer set to: {SelectedLayer?.Name}");
+                        }
                     }
                 }
-            }
+            });
         }
 
         private void OnMapRemoved(MapRemovedEventArgs args)
